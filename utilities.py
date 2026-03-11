@@ -55,8 +55,12 @@ class customdataloader:
         price = dailyprice.groupby(['EID', 'MONTH', 'PEAKID'])["PRICEREALIZED"].sum()
 
         copri = pd.merge(cost, price, on=['EID', 'MONTH','PEAKID'], how='outer').fillna(0)
+        copri = copri.rename(columns={'C': 'COST', 'PRICEREALIZED': 'PRICE'})
+        copri['PROFIT'] = copri['PRICE'] - copri['COST']
 
         return copri
+
+
 
 
 
