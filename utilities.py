@@ -63,6 +63,10 @@ class customdataloader:
 
         return copri
 
+    #def get_daily_data(self,filterdf):
+    #
+    #    #Input
+    #    #   filterdf: df with three columns: MONTH, PEAKID, EID with nrow = batch size
 
 
 
