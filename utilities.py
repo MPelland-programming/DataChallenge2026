@@ -107,9 +107,10 @@ class customdataloader:
                 #append temp to dailysim
                 dailysim = pd.concat([dailysim, temp], ignore_index=True)
 
+
             # append d to all column names
-            newcolnames = ["d"+col for col in self.day_sim_col]
-            dailysim.columns = newcolnames
+        newcolnames = ["d"+col for col in self.day_sim_col]
+        dailysim.columns = newcolnames
 
         return dailysim
 
@@ -125,7 +126,7 @@ class customdataloader:
         monthlysim = pd.DataFrame(columns=self.month_sim_col)
 
         #loop over daily files
-        for mm in self.dsimulation:
+        for mm in self.msimulation:
             #extract year from file name
             fileyear = mm.split("/")[-1].split(".")[0][-4:]
 
@@ -138,14 +139,14 @@ class customdataloader:
                         AND d.PEAKID  = f.PEAKID
                         AND d.EID     = f.EID
                     """).to_df()
-
-                #append temp to dailysim
+                #appnd temp to dailysim
                 monthlysim = pd.concat([monthlysim, temp], ignore_index=True)
 
-            newcolnames = ["m" + col for col in self.month_sim_col]
-            monthlysim.columns = newcolnames
+        newcolnames = ["m" + col for col in self.month_sim_col]
 
-        return montlhysim
+        monthlysim.columns = newcolnames
+
+        return monthlysim
 
 
                     #filterdf = pd.merge(filterdf, daily_data, on=['EID', 'MONTH','PEAKID'], how='left')
