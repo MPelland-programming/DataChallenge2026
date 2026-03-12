@@ -1,199 +1,156 @@
+import os
 import pyarrow.parquet as pq
 import pandas as pd
 import duckdb
 
-class customdataloader:
-    #input: path to price and cost files
-    #      pricefile: path to price parquet file
-    #      costfile: path to cost parquet file
-    #      dsimfile: list of paths to daily simulation parquet files (optional)
-    #      msimfile: list of paths to monthly simulation parquet files (optional)
 
-    def __init__(self
-                 , pricefile: str
-                 , costfile: str
-                 , dsimfile = list
-                 , msimfile = list
-                 ):
+class customdataloader:
+    def __init__(self, pricefile: str, costfile: str, dsimfile=None, msimfile=None):
         self.pricefile = pricefile
         self.costfile = costfile
-        self.dsimulation = dsimfile
-        self.msimulation = msimfile
-        self.get_all_triplets()
-        self.day_sim_col = pq.read_schema(self.dsimulation[0]).names
-        self.month_sim_col = pq.read_schema(self.msimulation[0]).names
+        self.dsimulation = dsimfile or []
+        self.msimulation = msimfile or []
+        self.day_sim_col = pq.read_schema(self.dsimulation[0]).names if self.dsimulation else []
+        self.month_sim_col = pq.read_schema(self.msimulation[0]).names if self.msimulation else []
         self.price_col = pq.read_schema(pricefile).names
 
-
-    def get_all_triplets(self):
-        #This function looks through the cost and price files to extract all unique triplets of MONTH, PEAKID, and EID.
-        #This is necessary to ensure that we only query for the relevant data when calculating price, cost, and profit.
+    # --- Fix #2: triplets now filtered by cutoff_date ---
+    def get_all_triplets(self, cutoff_date: str):
+        """
+        Return all unique (MONTH, PEAKID, EID) visible at cutoff.
+        cutoff_date: 'YYYY-MM-DD' (the 7th of month M).
+        Only includes months <= M (the month of the cutoff).
+        """
+        cutoff_month = cutoff_date[:7]  # 'YYYY-MM'
 
         all_triplets = duckdb.query(f"""
-                SELECT DISTINCT MONTH, PEAKID, EID
-                FROM (
-                    SELECT p1.MONTH, p1.PEAKID, p1.EID
-                    FROM read_parquet('{self.costfile}') p1
-                    UNION
-                    SELECT strftime(p2.DATETIME, '%Y-%m') AS MONTH, p2.PEAKID, p2.EID
-                    FROM read_parquet('{self.pricefile}') p2
-                )
-            """).to_df()
+            SELECT DISTINCT MONTH, PEAKID, EID
+            FROM (
+                SELECT p1.MONTH, p1.PEAKID, p1.EID
+                FROM read_parquet('{self.costfile}') p1
+                WHERE p1.MONTH <= '{cutoff_month}'
+                UNION
+                SELECT strftime(p2.DATETIME, '%Y-%m') AS MONTH, p2.PEAKID, p2.EID
+                FROM read_parquet('{self.pricefile}') p2
+                WHERE p2.DATETIME <= '{cutoff_date}T23:59:59'
+            )
+        """).to_df()
 
-        self.all_triplets = all_triplets
+        return all_triplets
 
-    def get_price_cost_profit(self, filterdf = "all"):
-        # This fun ction takes a list of target triplets (MONTH, PEAKID, EID) and queries the price and cost data to calculate
-        # profit for each triplet.
-        #filter is a df with three columns: MONTH, PEAKID, EID with nrow = batch size
+    def get_price_cost_profit(self, filterdf="all", cutoff_date=None):
+        """
+        Calculate profit for each triplet. If filterdf='all', uses all triplets
+        visible at cutoff_date.
+        """
         if isinstance(filterdf, str) and filterdf == "all":
-            filterdf = self.all_triplets
+            if cutoff_date is None:
+                raise ValueError("cutoff_date required when filterdf='all'")
+            filterdf = self.get_all_triplets(cutoff_date)
 
         cost = duckdb.query(f"""
-                    SELECT p.*
-                    FROM read_parquet('{self.costfile}') p
-                        INNER JOIN filterdf f
-                        ON  p.MONTH = f.MONTH
-                        AND p.PEAKID  = f.PEAKID
-                        AND p.EID     = f.EID
-                    """).to_df()
+            SELECT p.*
+            FROM read_parquet('{self.costfile}') p
+                INNER JOIN filterdf f
+                ON  p.MONTH   = f.MONTH
+                AND p.PEAKID  = f.PEAKID
+                AND p.EID     = f.EID
+        """).to_df()
 
-        #price price summed within triplet
         dailyprice = duckdb.query(f"""
             SELECT p.*
             FROM read_parquet('{self.pricefile}') p
                 INNER JOIN filterdf f
-                ON  strftime(p.DATETIME, '%Y-%m')   = f.MONTH
+                ON  strftime(p.DATETIME, '%Y-%m') = f.MONTH
                 AND p.PEAKID  = f.PEAKID
                 AND p.EID     = f.EID
-            """).to_df()
+        """).to_df()
         dailyprice['MONTH'] = pd.to_datetime(dailyprice['DATETIME']).dt.to_period('M').astype(str)
-        price = dailyprice.groupby(['EID', 'MONTH', 'PEAKID'])["PRICEREALIZED"].sum()
+        price = dailyprice.groupby(['EID', 'MONTH', 'PEAKID'])["PRICEREALIZED"].sum().reset_index()
 
-        copri = pd.merge(cost, price, on=['EID', 'MONTH','PEAKID'], how='outer').fillna(0)
+        copri = pd.merge(cost, price, on=['EID', 'MONTH', 'PEAKID'], how='outer').fillna(0)
         copri = copri.rename(columns={'C': 'COST', 'PRICEREALIZED': 'PRICE'})
         copri['PROFIT'] = copri['PRICE'] - copri['COST']
 
         return copri
 
-    def get_daily_data(self,filterdf):
-        #Extract daily simulation information based on filterdf.
-        #Input
-        #   filterdf: df with three columns: MONTH, PEAKID, EID with nrow = batch size
-
-        #get list of all unique years in the filterdf
+    # --- Fix #3: accumulate in list + Fix #4: cutoff on daily sims ---
+    def get_daily_data(self, filterdf, cutoff_date: str):
+        """
+        Extract daily simulation data respecting cutoff (<=7th of M).
+        cutoff_date: 'YYYY-MM-DD' format.
+        """
         list_years = pd.to_datetime(filterdf['MONTH']).dt.year.unique().astype(str).tolist()
+        chunks = []
 
-        #go through all daily simulation files and check if the year falls within the range of the filterdf.
-
-        # create empty df to store daily data with same columns as daily simulation files
-        dailysim = pd.DataFrame(columns=self.day_sim_col)
-
-        #loop over daily files
         for dd in self.dsimulation:
-            #extract year from file name
-            fileyear = dd.split("/")[-1].split(".")[0][-4:]
+            fileyear = os.path.basename(dd).split(".")[0][-4:]
+            if fileyear not in list_years:
+                continue
 
-            if (fileyear in list_years):
-                temp = duckdb.query(f"""
-                    SELECT d.*
-                    FROM read_parquet('{dd}') d
-                        INNER JOIN filterdf f
-                        ON  strftime(d.DATETIME, '%Y-%m')   = f.MONTH
-                        AND d.PEAKID  = f.PEAKID
-                        AND d.EID     = f.EID
-                    """).to_df()
+            # Fix #4: filter DATETIME <= cutoff (8th 00:00 = HE24 of the 7th)
+            cutoff_he = (pd.Timestamp(cutoff_date) + pd.DateOffset(days=1)).strftime('%Y-%m-%dT%H:%M:%S')
+            temp = duckdb.query(f"""
+                SELECT d.*
+                FROM read_parquet('{dd}') d
+                    INNER JOIN filterdf f
+                    ON  strftime(d.DATETIME, '%Y-%m') = f.MONTH
+                    AND d.PEAKID  = f.PEAKID
+                    AND d.EID     = f.EID
+                WHERE d.DATETIME <= '{cutoff_he}'
+            """).to_df()
 
-                #append temp to dailysim
-                dailysim = pd.concat([dailysim, temp], ignore_index=True)
+            if not temp.empty:
+                chunks.append(temp)
 
+        dailysim = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame(columns=self.day_sim_col)
 
-            # append d to all column names
-        newcolnames = ["d"+col for col in self.day_sim_col]
-        dailysim.columns = newcolnames
+        # Fix #5: prefix only non-key columns
+        key_cols = {'SCENARIOID', 'EID', 'DATETIME', 'PEAKID'}
+        dailysim = dailysim.rename(columns={c: f"d_{c}" for c in dailysim.columns if c not in key_cols})
 
         return dailysim
 
-    def get_monthly_data(self,filterdf):
-        #Extract montlhy simulation information based on filterdf.
-        #Input
-        #   filterdf: df with three columns: MONTH, PEAKID, EID with nrow = batch size
-
-        #get list of all unique years in the filterdf
+    def get_monthly_data(self, filterdf):
+        """
+        Extract monthly simulation data for the months in filterdf.
+        Monthly sims for M+1 are produced before the 7th of M, so they are always available.
+        """
         list_years = pd.to_datetime(filterdf['MONTH']).dt.year.unique().astype(str).tolist()
+        chunks = []
 
-        # create empty df to store daily data with same columns as daily simulation files
-        monthlysim = pd.DataFrame(columns=self.month_sim_col)
-
-        #loop over daily files
         for mm in self.msimulation:
-            #extract year from file name
-            fileyear = mm.split("/")[-1].split(".")[0][-4:]
+            fileyear = os.path.basename(mm).split(".")[0][-4:]
+            if fileyear not in list_years:
+                continue
 
-            if (fileyear in list_years):
-                temp = duckdb.query(f"""
-                    SELECT d.*
-                    FROM read_parquet('{mm}') d
-                        INNER JOIN filterdf f
-                        ON  strftime(d.DATETIME, '%Y-%m')   = f.MONTH
-                        AND d.PEAKID  = f.PEAKID
-                        AND d.EID     = f.EID
-                    """).to_df()
-                #appnd temp to dailysim
-                monthlysim = pd.concat([monthlysim, temp], ignore_index=True)
+            temp = duckdb.query(f"""
+                SELECT d.*
+                FROM read_parquet('{mm}') d
+                    INNER JOIN filterdf f
+                    ON  strftime(d.DATETIME, '%Y-%m') = f.MONTH
+                    AND d.PEAKID  = f.PEAKID
+                    AND d.EID     = f.EID
+            """).to_df()
 
-        newcolnames = ["m" + col for col in self.month_sim_col]
+            if not temp.empty:
+                chunks.append(temp)
 
-        monthlysim.columns = newcolnames
+        monthlysim = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame(columns=self.month_sim_col)
+
+        # Fix #5: prefix only non-key columns
+        key_cols = {'SCENARIOID', 'EID', 'DATETIME', 'PEAKID'}
+        monthlysim = monthlysim.rename(columns={c: f"m_{c}" for c in monthlysim.columns if c not in key_cols})
 
         return monthlysim
 
-
-                    #filterdf = pd.merge(filterdf, daily_data, on=['EID', 'MONTH','PEAKID'], how='left')
-
     def get_daily_price(self, filterdf):
-        #get list of all unique years in the filterdf
-        list_years = pd.to_datetime(filterdf['MONTH']).dt.year.unique().astype(str).tolist()
-
-        # create empty df to store daily data with same columns as daily simulation files
-        dailyprice = pd.DataFrame(columns=self.price_col)
-
         dailyprice = duckdb.query(f"""
             SELECT p.*
             FROM read_parquet('{self.pricefile}') p
                 INNER JOIN filterdf f
-                ON  strftime(p.DATETIME, '%Y-%m')   = f.MONTH
+                ON  strftime(p.DATETIME, '%Y-%m') = f.MONTH
                 AND p.PEAKID  = f.PEAKID
                 AND p.EID     = f.EID
-            """).to_df()
-
+        """).to_df()
         return dailyprice
-
-    def get_sim_price_profit(self, filterdf):
-        #This function merges the daily and monthly simulation data with the price, cost, and profit data based on the filterdf.
-        #Input
-        #   filterdf: df with three columns: MONTH, PEAKID, EID with nrow = batch size
-
-        monthly_info = self.get_price_cost_profit(filterdf=filterdf)
-        daily_price = self.get_daily_price(filterdf)
-
-        daily_sim = self.get_daily_data(filterdf)
-        monthly_sim = self.get_monthly_data(filterdf)
-
-        #merged = pd.merge(copri, daily_data, on=['EID', 'MONTH','PEAKID'], how='outer').fillna(0)
-        #merged = pd.merge(merged, monthly_data, on=['EID', 'MONTH','PEAKID'], how='outer').fillna(0)
-
-        return (monthly_info, daily_price, daily_sim, monthly_sim)
-
-
-
-
-
-
-
-
-
-
-
-
-
