@@ -1,5 +1,4 @@
 import argparse
-
 # Get input
 parser = argparse.ArgumentParser()
 parser.add_argument('--start-month', type=str, required=True, help='Start month in the format YYYY-MM')

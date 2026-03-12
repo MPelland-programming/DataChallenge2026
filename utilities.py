@@ -186,14 +186,34 @@ class customdataloader:
         return (monthly_info, daily_price, daily_sim, monthly_sim)
 
 
+def select_best_predict_and_print(resultdf,min_opp = 10, max_opp = 100):
+    """
+    This function takes a dataframe containing four columns: EID, MONTH, PEAKID and PREDICTED_PROFIT.
+    It removes duplicates based on the triplet (EID, MONTH, PEAKID).
+    If more than one row has the same triplet, it keeps the averages of the PREDICTED_PROFIT for those rows.
+    Finally, it prints the resulting dataframe.
+    :param resultdf:
+    :      min_opp: minimum number of opportunities to consider for printing
+    :      max_opp: maximum number of opportunities to consider for printing
+    :return: none, but prints a
+    """
 
+    # Remove duplicates based on the triplet (EID, MONTH, PEAKID) and keep the average of PREDICTED_PROFIT
+    resultdf = resultdf.groupby(['EID', 'MONTH', 'PEAKID'], as_index=False)['PREDICTED_PROFIT'].mean()
 
+    #sort the resulting dataframe by PREDICTED_PROFIT in descending order
+    resultdf = resultdf.sort_values(by='PREDICTED_PROFIT', ascending=False)
 
+    n_profit_opp = sum(resultdf['PREDICTED_PROFIT'] > 0)
 
+    if n_profit_opp < min_opp:
+        #create choice df which contains min_opp rows with the highest PREDICTED_PROFIT
+        choice = resultdf.head(min_opp)[['EID', 'MONTH', 'PEAKID']]
 
+    elif n_profit_opp < max_opp:
+        choice = resultdf.head(n_profit_opp)[['EID', 'MONTH', 'PEAKID']]
+    else:
+        choice = resultdf.head(max_opp)[['EID', 'MONTH', 'PEAKID']]
 
-
-
-
-
-
+    #write choice to csv file
+    choice.to_csv('opportunities.csv', index=False)
