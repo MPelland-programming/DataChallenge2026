@@ -1,5 +1,5 @@
 pyarrow==23.0.1
-pandas==
+pandas
 duckdb
 polars
 numpy
