@@ -17,24 +17,36 @@ parser = argparse.ArgumentParser(
     ),
     epilog=(
         'Examples:\n'
-        '  python main.py --start-month 2024-01 --end-month 2024-06\n'
-        '  python main.py --start-month 2024-01 --end-month 2024-12 --data-root /path/to/data --log-level DEBUG'
+        '  # Full provided dataset (default, no args needed):\n'
+        '  python main.py\n'
+        '\n'
+        '  # Training set only (2020-2022):\n'
+        '  python main.py --end-month 2022-12\n'
+        '\n'
+        '  # Validation set only (2023):\n'
+        '  python main.py --start-month 2023-01\n'
+        '\n'
+        '  # Out-of-sample test (2024, when data is available):\n'
+        '  python main.py --start-month 2024-01 --end-month 2024-12\n'
+        '\n'
+        '  # With explicit data path and debug logging:\n'
+        '  python main.py --data-root /path/to/data --log-level DEBUG'
     ),
     formatter_class=argparse.RawDescriptionHelpFormatter,
 )
 parser.add_argument(
     '--start-month',
     type=str,
-    required=True,
+    default='2020-01',
     metavar='YYYY-MM',
-    help='First target month to evaluate (e.g. 2024-01). The cutoff will be set to the 7th of the preceding month.',
+    help='First target month to evaluate (e.g. 2024-01). The cutoff will be set to the 7th of the preceding month. Defaults to 2020-01.',
 )
 parser.add_argument(
     '--end-month',
     type=str,
-    required=True,
+    default='2023-12',
     metavar='YYYY-MM',
-    help='Last target month to evaluate (e.g. 2024-06). Must be >= start-month.',
+    help='Last target month to evaluate (e.g. 2024-06). Must be >= start-month. Defaults to 2023-12.',
 )
 parser.add_argument(
     '--data-root',
@@ -130,5 +142,7 @@ output['PEAK_TYPE'] = output['PEAKID'].map({0: 'OFF', 1: 'ON'})
 output = output.rename(columns={'MONTH': 'TARGET_MONTH'})
 output = output[['TARGET_MONTH', 'PEAK_TYPE', 'EID']].drop_duplicates()
 
-output.to_csv(os.path.join(DATA_ROOT, 'opportunities.csv'), index=False)
-logger.info(f"Output: {len(output)} rows saved to opportunities.csv")
+project_root = os.path.dirname(os.path.abspath(__file__))
+output_path = os.path.join(project_root, 'opportunities.csv')
+output.to_csv(output_path, index=False)
+logger.info(f"Output: {len(output)} rows saved to {output_path}")

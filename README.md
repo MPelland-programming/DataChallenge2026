@@ -84,3 +84,46 @@ DataChallenge2026/
     ├── sim_daily/sim_daily_<year>.parquet
     └── sim_monthly/sim_monthly_<year>.parquet
 ```
+
+---
+
+## 7. Recommended Train / Validation Split
+
+The provided dataset covers **2020–2023**. A 2024 out-of-sample set will be distributed later for robustness testing. Final scoring uses 2025 (never provided).
+
+| Purpose | Period | Command |
+|---------|--------|---------|
+| Default evaluation (full provided set) | 2020-01 → 2023-12 | `python main.py` |
+| Training only | 2020-01 → 2022-12 | `python main.py --start-month 2020-01 --end-month 2022-12` |
+| Validation only | 2023-01 → 2023-12 | `python main.py --start-month 2023-01 --end-month 2023-12` |
+| Out-of-sample (2024, when available) | 2024-01 → 2024-12 | `python main.py --start-month 2024-01 --end-month 2024-12` |
+
+The anti-leakage cutoff is enforced automatically for every month — there is no risk of data contamination between periods regardless of the date range chosen.
+
+---
+
+## 8. Methodological Approach
+
+> **TODO**: Describe the scoring/selection approach here once implemented.
+>
+> Expected content:
+> - Feature engineering from `sim_monthly`, `sim_daily`, historical prices and costs
+> - Model or heuristic used to estimate `PREDICTED_PROFIT` per triplet (EID, MONTH, PEAKID)
+> - How scenarios (SCENARIOID 1, 2, 3) are combined or used individually
+> - How the 10–100 opportunity constraint is applied
+> - Key design decisions and their justifications
+> - Any domain-driven signals leveraged (ACTIVATIONLEVEL, impact variables, PSM/PSD)
+
+---
+
+## 9. Results and Analysis
+
+> **TODO**: Fill in once the scoring algorithm is implemented and run on the validation set.
+>
+> Expected content:
+> - F1-score (precision/recall) on the 2023 validation set, broken down by ON-Peak and OFF-Peak
+> - Total net profit on the validation set
+> - Distribution of selected opportunities per month (count, profitable fraction)
+> - Comparison with baseline (e.g. random selection)
+> - Error analysis: common false-positive and false-negative patterns
+> - Potential improvements and open questions
