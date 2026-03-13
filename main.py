@@ -7,11 +7,50 @@ from datachallenge.logger import logger
 
 
 # Get input
-parser = argparse.ArgumentParser()
-parser.add_argument('--start-month', type=str, required=True, help='Start month in the format YYYY-MM')
-parser.add_argument('--end-month', type=str, required=True, help='End month in the format YYYY-MM')
-parser.add_argument('--data-root', type=str, default=None, help='Path to data folder (overrides DATA_ROOT in .env)')
-parser.add_argument('--log-level', type=str, default=None, help='Log level: DEBUG, INFO, WARNING, ERROR (overrides LOG_LEVEL in .env)')
+parser = argparse.ArgumentParser(
+    description=(
+        'Identify profitable FTR (Financial Transmission Rights) opportunities '
+        'for a range of target months. For each month M+1 in the given range, '
+        'the algorithm uses data available up to the 7th of month M (cutoff) '
+        'to select between 10 and 100 ON-Peak/OFF-Peak opportunities. '
+        'Results are written to opportunities.csv in the data folder.'
+    ),
+    epilog=(
+        'Examples:\n'
+        '  python main.py --start-month 2024-01 --end-month 2024-06\n'
+        '  python main.py --start-month 2024-01 --end-month 2024-12 --data-root /path/to/data --log-level DEBUG'
+    ),
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+)
+parser.add_argument(
+    '--start-month',
+    type=str,
+    required=True,
+    metavar='YYYY-MM',
+    help='First target month to evaluate (e.g. 2024-01). The cutoff will be set to the 7th of the preceding month.',
+)
+parser.add_argument(
+    '--end-month',
+    type=str,
+    required=True,
+    metavar='YYYY-MM',
+    help='Last target month to evaluate (e.g. 2024-06). Must be >= start-month.',
+)
+parser.add_argument(
+    '--data-root',
+    type=str,
+    default=None,
+    metavar='PATH',
+    help='Path to the data folder containing costs/, prices/, sim_daily/, sim_monthly/. Overrides DATA_ROOT in .env.',
+)
+parser.add_argument(
+    '--log-level',
+    type=str,
+    default=None,
+    choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+    metavar='LEVEL',
+    help='Logging verbosity: DEBUG, INFO, WARNING, or ERROR. Overrides LOG_LEVEL in .env.',
+)
 args = parser.parse_args()
 
 # Apply CLI overrides
