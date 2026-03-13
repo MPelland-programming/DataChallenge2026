@@ -9,6 +9,9 @@ DATA_ROOT = os.path.join(os.path.dirname(__file__), "..", "data")
 
 
 @pytest.fixture(scope="session")
+# create one instance that is reused across the entire session
+# because loading data from disk is heavy, and otherwise it would recreate
+# it for each test, so it's an optimization
 def loader():
     pricefile = os.path.join(DATA_ROOT, "prices", "prices.parquet")
     costfile = os.path.join(DATA_ROOT, "costs", "costs.parquet")
