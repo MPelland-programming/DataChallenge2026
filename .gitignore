@@ -5,6 +5,9 @@ data/
 # Environment variables
 .env
 
+# MCP configuration (local only)
+.mcp.json
+
 # Virtual environment
 .venv/
 
