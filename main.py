@@ -2,25 +2,25 @@ import argparse
 import os
 import pandas as pd
 from datachallenge.loader import CustomDataLoader
+from datachallenge.config import settings
+from datachallenge.logger import logger
 
 
 # Get input
 parser = argparse.ArgumentParser()
 parser.add_argument('--start-month', type=str, required=True, help='Start month in the format YYYY-MM')
 parser.add_argument('--end-month', type=str, required=True, help='End month in the format YYYY-MM')
-parser.add_argument('--data-root', type=str, default='data', help='Path to data folder')
+parser.add_argument('--data-root', type=str, default=None, help='Path to data folder (overrides DATA_ROOT in .env)')
+parser.add_argument('--log-level', type=str, default=None, help='Log level: DEBUG, INFO, WARNING, ERROR (overrides LOG_LEVEL in .env)')
 args = parser.parse_args()
 
+# Apply CLI overrides
+if args.log_level:
+    logger.setLevel(args.log_level.upper())
 
-# Paths perso pour tester seulement
-DATA_ROOT = r"G:\.shortcut-targets-by-id\1SR7TxhNQjFyS8f2bbuo9pcLvzNMLBMwY\CSD\data"
+DATA_ROOT = args.data_root if args.data_root else settings.data_root
 costfile = os.path.join(DATA_ROOT, 'costs', 'costs.parquet')
 pricefile = os.path.join(DATA_ROOT, 'prices', 'prices.parquet')
-
-# --- Paths ---
-# DATA_ROOT = args.data_root
-# costfile = os.path.join(DATA_ROOT, 'costs', 'costs.parquet')
-# pricefile = os.path.join(DATA_ROOT, 'prices', 'prices.parquet')
 
 # derive years dynamically from the date range
 start = pd.Timestamp(args.start_month + '-01')
@@ -46,7 +46,7 @@ for target_date in target_months:
     decision_date = target_date - pd.DateOffset(months=1)
     cutoff_date = decision_date.replace(day=7).strftime('%Y-%m-%d')  # 7th of M
 
-    print(f"[Target: {target_month}] Cutoff: {cutoff_date}")
+    logger.info(f"[Target: {target_month}] Cutoff: {cutoff_date}")
 
     # --- Build candidate filterdf for M+1 simulations ---
     # Monthly sims for M+1 are available at cutoff
@@ -80,7 +80,6 @@ for target_date in target_months:
     # ---------------------------------------------------------
 
     # Placeholder: select top 50 random (replace with real scoring)
-    import numpy as np
     n_select = min(50, len(candidates))
     selected = candidates.sample(n=n_select, random_state=42)
 
@@ -93,4 +92,4 @@ for target_date in target_months:
 # output = output[['TARGET_MONTH', 'PEAK_TYPE', 'EID']].drop_duplicates()
 
 # output.to_csv(os.path.join(DATA_ROOT, 'opportunities.csv'), index=False)
-# print(f"Output: {len(output)} rows saved to opportunities.csv")
+# logger.info(f"Output: {len(output)} rows saved to opportunities.csv")
