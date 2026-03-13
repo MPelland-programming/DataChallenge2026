@@ -83,3 +83,13 @@ def test_select_best_predict_and_print(loader, tmp_path, monkeypatch):
     # function signature. Violating either bound means the selection logic is
     # broken regardless of prediction quality.
     assert 10 <= len(written) <= 100, f"Output has {len(written)} rows, expected 10–100"
+
+    # Output columns must be exactly TARGET_MONTH, PEAK_TYPE, EID — in that order.
+    # This is the contract expected by downstream consumers of opportunities.csv.
+    assert list(written.columns) == ["TARGET_MONTH", "PEAK_TYPE", "EID"]
+
+    # PEAK_TYPE must only contain "ON" or "OFF" — never raw PEAKID integers.
+    assert set(written["PEAK_TYPE"].unique()).issubset({"ON", "OFF"})
+
+    # TARGET_MONTH must follow the YYYY-MM format.
+    assert written["TARGET_MONTH"].str.match(r"^\d{4}-\d{2}$").all()

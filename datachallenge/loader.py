@@ -202,5 +202,11 @@ def select_best_predict_and_print(resultdf, min_opp=10, max_opp=100):
     else:
         choice = resultdf.head(max_opp)[['EID', 'MONTH', 'PEAKID']]
 
+    # Rename columns to the expected output format before writing
+    choice = choice.copy()
+    choice['PEAKID'] = choice['PEAKID'].map({0: 'OFF', 1: 'ON'})
+    choice = choice.rename(columns={'MONTH': 'TARGET_MONTH', 'PEAKID': 'PEAK_TYPE'})
+    choice = choice[['TARGET_MONTH', 'PEAK_TYPE', 'EID']]
+
     #write choice to csv file
     choice.to_csv('opportunities.csv', index=False)
