@@ -85,11 +85,11 @@ for target_date in target_months:
 
     all_selections.append(selected)
 
-# --- Build output CSV in the END
-# output = pd.concat(all_selections, ignore_index=True)
-# output['PEAK_TYPE'] = output['PEAKID'].map({0: 'OFF', 1: 'ON'})
-# output = output.rename(columns={'MONTH': 'TARGET_MONTH'})
-# output = output[['TARGET_MONTH', 'PEAK_TYPE', 'EID']].drop_duplicates()
+# --- Build output CSV
+output = pd.concat(all_selections, ignore_index=True)
+output['PEAK_TYPE'] = output['PEAKID'].map({0: 'OFF', 1: 'ON'})
+output = output.rename(columns={'MONTH': 'TARGET_MONTH'})
+output = output[['TARGET_MONTH', 'PEAK_TYPE', 'EID']].drop_duplicates()
 
-# output.to_csv(os.path.join(DATA_ROOT, 'opportunities.csv'), index=False)
-# logger.info(f"Output: {len(output)} rows saved to opportunities.csv")
+output.to_csv(os.path.join(DATA_ROOT, 'opportunities.csv'), index=False)
+logger.info(f"Output: {len(output)} rows saved to opportunities.csv")
