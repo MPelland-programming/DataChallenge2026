@@ -7,3 +7,16 @@
 
 # Virtual environment
 .venv/
+
+# uv setup
+.python-version
+pyproject.toml
+
+# claude code setup
+.claude
+
+# Python cache
+__pycache__/
+
+# Task file
+TODO.md

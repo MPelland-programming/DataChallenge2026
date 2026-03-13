@@ -1,7 +1,7 @@
 import argparse
 import os
 import pandas as pd
-import utilities as util
+from datachallenge.loader import CustomDataLoader
 
 
 # Get input
@@ -32,7 +32,7 @@ dsimfile = [os.path.join(DATA_ROOT, 'sim_daily', f'sim_daily_{y}.parquet')
 msimfile = [os.path.join(DATA_ROOT, 'sim_monthly', f'sim_monthly_{y}.parquet')
             for y in all_years if os.path.exists(os.path.join(DATA_ROOT, 'sim_monthly', f'sim_monthly_{y}.parquet'))]
 
-loader = util.customdataloader(pricefile, costfile, dsimfile, msimfile)
+loader = CustomDataLoader(pricefile, costfile, dsimfile, msimfile)
 
 # --- Fix #2 & #3: month-by-month loop with cutoff logic ---
 # Generate list of target months M+1 between start and end
