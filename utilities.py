@@ -70,7 +70,7 @@ class customdataloader:
 
         copri = pd.merge(cost, price, on=['EID', 'MONTH', 'PEAKID'], how='outer').fillna(0)
         copri = copri.rename(columns={'C': 'COST', 'PRICEREALIZED': 'PRICE'})
-        copri['PROFIT'] = copri['PRICE'] - copri['COST']
+        copri['PROFIT'] = copri['PRICE'].abs() - copri['COST'].abs()
 
         return copri
 
