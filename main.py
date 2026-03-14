@@ -4,11 +4,25 @@ import pandas as pd
 from datachallenge.loader import CustomDataLoader
 from datachallenge.config import settings
 from datachallenge.logger import logger
-from datachallenge.scoring import score_by_activation_level
+from datachallenge.scoring import score_by_activation_level, score_by_historical_profit_rate
 from datachallenge.selection import select_opportunities
 from datachallenge.output import write_opportunities
 from datachallenge.candidates import build_candidate_pool
 
+# Registry: name → function. Add new scorers/selectors here (one line each).
+SCORER_REGISTRY = {
+    'activation_level': score_by_activation_level,
+    'historical_profit_rate': score_by_historical_profit_rate,
+}
+SELECTOR_REGISTRY = {
+    'default': select_opportunities,
+}
+
+# Best known combination — update this when a better one is found.
+# Updated 2026-03-14: activation_level beats historical_profit_rate on both
+# 2020-2022 train (F1 0.1337 vs 0.0478) and 2023 val (F1 0.0967 vs 0.0354).
+DEFAULT_SCORER = 'activation_level'
+DEFAULT_SELECTOR = 'default'
 
 # Get input
 parser = argparse.ArgumentParser(
@@ -34,7 +48,10 @@ parser = argparse.ArgumentParser(
         '  python main.py --start-month 2024-01 --end-month 2024-12\n'
         '\n'
         '  # With explicit data path and debug logging:\n'
-        '  python main.py --data-root /path/to/data --log-level DEBUG'
+        '  python main.py --data-root /path/to/data --log-level DEBUG\n'
+        '\n'
+        '  # With explicit scorer and selector:\n'
+        '  python main.py --scorer historical_profit_rate --selector default'
     ),
     formatter_class=argparse.RawDescriptionHelpFormatter,
 )
@@ -67,11 +84,31 @@ parser.add_argument(
     metavar='LEVEL',
     help='Logging verbosity: DEBUG, INFO, WARNING, or ERROR. Overrides LOG_LEVEL in .env.',
 )
+parser.add_argument(
+    '--scorer',
+    type=str,
+    default=DEFAULT_SCORER,
+    choices=list(SCORER_REGISTRY),
+    metavar='NAME',
+    help=f'Scorer to use. Choices: {list(SCORER_REGISTRY)}. Default: {DEFAULT_SCORER}.',
+)
+parser.add_argument(
+    '--selector',
+    type=str,
+    default=DEFAULT_SELECTOR,
+    choices=list(SELECTOR_REGISTRY),
+    metavar='NAME',
+    help=f'Selector to use. Choices: {list(SELECTOR_REGISTRY)}. Default: {DEFAULT_SELECTOR}.',
+)
 args = parser.parse_args()
 
 # Apply CLI overrides
 if args.log_level:
     logger.setLevel(args.log_level.upper())
+
+scorer_fn = SCORER_REGISTRY[args.scorer]
+selector_fn = SELECTOR_REGISTRY[args.selector]
+logger.info(f"Using scorer={args.scorer}, selector={args.selector}")
 
 DATA_ROOT = args.data_root if args.data_root else settings.data_root
 costfile = os.path.join(DATA_ROOT, 'costs', 'costs.parquet')
@@ -103,8 +140,8 @@ for target_date in target_months:
     logger.info(f"[Target: {target_month}] Cutoff: {cutoff_date}")
 
     candidates = build_candidate_pool(loader, cutoff_date, target_month)
-    scored = score_by_activation_level(loader, candidates, cutoff_date)
-    selected = select_opportunities(scored)
+    scored = scorer_fn(loader, candidates, cutoff_date)
+    selected = selector_fn(scored)
 
     logger.info(f"[Target: {target_month}] Selected {len(selected)} opportunities")
     all_selections.append(selected)
