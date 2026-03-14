@@ -87,9 +87,15 @@ Do not restrict the candidate pool to historically observed triplets only.
 
 ## Hypotheses
 
-### H1 — ACTIVATIONLEVEL is a strong primary signal — ✗ REFUTED
+### H1 — ACTIVATIONLEVEL is a strong primary signal — ✗ REFUTED (as classifier) / ⚠ NUANCED (as ranker)
 
 > *Originally "confirmed by colleagues". Refuted by data analysis (2020–2023).*
+
+> **Scope note**: all signal analyses (AUC, correlations, thresholds) are computed on
+> *non-zero triplets* — those with at least one price or cost row. This is the appropriate
+> scope for evaluating predictive power (zero-zero triplets have profit = 0 by construction
+> and are trivially unprofitable). The 71% base rate reported in the Base Rate section is a
+> consequence of this scope; the true cartesian rate is 6.43%. See Base Rate section.
 
 | Metric | Value |
 |--------|-------|
@@ -110,9 +116,28 @@ constraint in; residual profit comes from the market being wrong, not from activ
 **Key insight**: the sims tell you what the market already knows.
 Profitability comes from what the market gets wrong.
 
-**Consequence for modeling**: ACTIVATIONLEVEL should not be used as a positive signal.
-Using it inversely (`−mean(ACTIVATIONLEVEL)` or `1 / (mean + ε)`) may be worth testing.
-Do **not** use it as the primary score.
+**Empirical update (2026-03-14)**: despite being anti-predictive as a *classifier*, the
+top-k activation_level scorer (rank all candidates by activation level, pick top 100)
+**outperforms** `historical_profit_rate` on both train and val:
+
+| Scorer | Period | F1 avg | Net profit |
+|--------|--------|--------|------------|
+| `activation_level` (top-k) | 2020–2022 train | **0.1337** | **3,471,724** |
+| `historical_profit_rate` | 2020–2022 train | 0.0478 | 783,256 |
+| `activation_level` (top-k) | 2023 val | **0.0967** | **132,999** |
+| `historical_profit_rate` | 2023 val | 0.0354 | 17,641 |
+
+**Threshold vs. top-k — a critical distinction**: H1 was tested with a *threshold* (select
+all triplets above 42.46%) which generalises poorly and collapses to 0 selections in 2023.
+A *top-k* ranker always selects exactly 100 candidates. Even a weak or inverted ranking
+signal concentrates selections in the most active corner of the market, where price swings —
+and therefore absolute profits — are largest. The hit rate is low (~20% on val), but the
+profit per hit is large enough to dominate.
+
+**Consequence for modeling**: ACTIVATIONLEVEL as a raw top-k ranker is the current best
+baseline. Its inverted form (`−mean(ACTIVATIONLEVEL)`) remains worth testing — if ranking
+by *lowest* activation also picks profitable constraints (the zero-pruning finding suggests
+it might), the two extremes may define complementary opportunity types.
 
 ---
 
@@ -147,9 +172,9 @@ decomposing into price and cost.
 
 ---
 
-### H4 — Some EIDs are "chronically profitable" — ✓ CONFIRMED
+### H4 — Some EIDs are "chronically profitable" — ✓ CONFIRMED (structurally) / ⚠ IMPLEMENTATION GAP
 
-> *This is the strongest signal found in the data.*
+> *This is the strongest signal found in the data — but has not yet translated to better selection.*
 
 | Metric | Value |
 |--------|-------|
@@ -162,11 +187,20 @@ Certain network elements are structurally and repeatedly profitable, likely due 
 persistent grid topology constraints (chronic transmission bottlenecks, hydro corridors, etc.).
 This signal is backward-looking but stable across years.
 
-**Usage**: `score = historical_profit_rate(EID, PEAKID)` over all months strictly before
-the cutoff. This is the recommended **new baseline** (replaces ACTIVATIONLEVEL).
+**Empirical update (2026-03-14)**: the `historical_profit_rate` scorer, which directly
+operationalises H4, is outperformed by the `activation_level` top-k ranker (F1 0.0354 vs
+0.0967 on 2023 val). The structural signal is real — 69% of pairs with history win more
+than half the time — but the current implementation has a gap:
 
-**Limitation**: new EIDs with no history cannot be scored this way. Fall back to a global
-average or a sim-based signal (possibly inverted) for those.
+- The **candidate pool** expands all known EIDs to both PEAKID values regardless of history.
+  Many pairs share nearly identical win rates, compressing the ranking signal.
+- The scorer does not distinguish between pairs with **deep history** (reliable rate) and
+  those with only 1–2 observations (noisy rate). Weighting by count would sharpen the signal.
+- **New EIDs** (not yet seen) fall back to the global average and are ranked identically,
+  adding noise to the bottom of the list.
+
+**Status**: the H4 signal is validated but not yet exploited effectively. It is a strong
+candidate for the *next* model iteration, ideally combined with the top-k activation signal.
 
 ---
 
@@ -238,24 +272,33 @@ profitability. Do not filter the candidate pool based on sim presence or activat
 
 ## Modeling Approaches (updated priority)
 
-### Model 0b — New Baseline: Historical Profitability Rate *(recommended next step)*
+### Model 0 — Current Best: ACTIVATIONLEVEL top-k ranking *(default)*
+
+Score = `mean(m_ACTIVATIONLEVEL)` across all 3 scenarios and all hours of M+1.
+Triplets absent from the sims receive score 0. Top 100 candidates selected.
+
+**Empirical results** (2026-03-14): F1 avg 0.1337 (train), 0.0967 (val). Best known so far.
+
+Despite H1 being refuted as a *classifier*, top-k ranking by activation level outperforms
+the H4-based historical baseline. See H1 empirical update for the explanation.
+
+Pros: simple, forward-looking (uses M+1 sims), currently best on val.
+Cons: relies on an anti-predictive signal; no interpretability of *why* a triplet is selected.
+
+See `datachallenge/scoring.py :: score_by_activation_level`.
+
+### Model 0b — Runner-up: Historical Profitability Rate
 
 Score = `historical_profit_rate(EID, PEAKID)` = fraction of months profitable over all
 months strictly before the cutoff, per (EID, PEAKID) pair.
 
-Pros: simple, interpretable, directly validated by H4, stable across years.
-Cons: blind to forward-looking information; new EIDs score 0 (need a fallback).
+**Empirical results** (2026-03-14): F1 avg 0.0478 (train), 0.0354 (val). Below Model 0.
 
-Fallback for new EIDs: global average profit rate, or seasonal average if available.
+Pros: interpretable, directly validated by H4, no leakage risk, stable structural signal.
+Cons: implementation gap reduces effectiveness (see H4 empirical update); blind to
+forward-looking information; candidate pool compression dilutes the ranking.
 
-### Model 0 — Old Baseline: ACTIVATIONLEVEL ranking *(disproven, kept for reference)*
-
-Score = `mean(m_ACTIVATIONLEVEL)` across all 3 scenarios and all hours of M+1.
-
-**This model is anti-predictive.** H1 was refuted. Kept as a reference/comparison point
-only. Its inverted form (`−mean(ACTIVATIONLEVEL)`) may be worth testing.
-
-See `datachallenge/scoring.py :: score_by_activation_level`.
+See `datachallenge/scoring.py :: score_by_historical_profit_rate`.
 
 ### Model A — Simulation price − estimated cost *(not viable)*
 
@@ -293,3 +336,60 @@ Cons: more complex; requires careful time-series cross-validation (no future lea
 - Time-series cross-validation: train on years N–(N+k), validate on N+k+1. Never shuffle.
 - **Do not prune** zero-sim or absent EIDs from the candidate pool (see zero pruning above).
 - `m_ACTIVATIONLEVEL` is on a **0–100 (percent)** scale, not 0–1.
+
+---
+
+## Jury Talking Points
+
+Key findings worth highlighting in the presentation, roughly in order of impact.
+
+### 1. The market efficiency paradox
+
+> *"The simulations tell you what the market already knows. Profitability comes from what the market gets wrong."*
+
+Every signal that reflects market expectations (ACTIVATIONLEVEL, PSM) is negatively
+correlated with realized profit. This is not a data problem — it is a direct consequence
+of market efficiency: if a constraint is widely expected to activate, its price is already
+bid up, eliminating the profit. Our models are therefore not trying to predict activation;
+they are trying to find where the market's prediction is wrong.
+
+### 2. A signal can be anti-predictive as a classifier yet useful as a ranker
+
+H1 shows ACTIVATIONLEVEL has AUC=0.424 — worse than random at identifying profitable
+triplets. Yet ranking by activation level and picking the top 100 produces F1=0.097 and
+net profit of 133K on the 2023 validation set — far better than the theoretically motivated
+historical baseline (F1=0.035, 18K profit).
+
+The reason: a *threshold* collapses to zero selections when the distribution shifts (F1=0
+on 2023 with the train threshold), but a *top-k* ranker is immune to distributional shift.
+High-activation constraints also involve larger price swings — so even a 20% hit rate
+generates more absolute profit than a 64% population average on smaller contracts.
+
+This is a nuanced, non-obvious finding that demonstrates analytical depth.
+
+### 3. Zero-sim triplets are the most profitable (91% hit rate)
+
+Triplets absent from simulations or with zero activation level are *more* profitable (91%)
+than those with non-zero simulation activity (68%). This inverts the naive assumption that
+"if it's not in the sim, it's not interesting." It reinforces point 1: sims track what the
+market expects, and absence from sims means the market is not pricing the constraint in —
+creating opportunity.
+
+**Practical consequence**: we do not prune the candidate pool based on simulation presence.
+
+### 4. Chronic winners — a structural market insight (H4)
+
+69% of (EID, PEAKID) pairs with at least 6 months of history have a win rate above 50%.
+45% are above 80%. This is not random — certain transmission elements face recurring
+bottlenecks (hydro corridors, wind generation zones, chronic line congestion) that reliably
+create FTR value. This structural insight provides an interpretability story: we are
+targeting elements with persistent grid topology constraints, not speculating on volatile
+one-off events.
+
+### 5. Rigorous anti-leak enforcement
+
+Every prediction uses only data available at the 7th of month M. The cutoff is enforced
+at three independent layers: the data loader (DuckDB queries filter by date), the historical
+scorer (explicitly excludes month M from the history window), and the candidate pool builder.
+This discipline is essential for the 2025 out-of-sample test — there is no risk that
+in-sample performance is inflated by future data.

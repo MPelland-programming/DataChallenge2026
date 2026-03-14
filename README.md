@@ -47,18 +47,25 @@ cp .env.example .env
 ### Running
 
 ```bash
-python main.py --start-month 2024-01 --end-month 2024-06
-```
+# Full dataset (default scorer, default selector — no args needed):
+python main.py
 
-Optional overrides:
+# Explicit date range:
+python main.py --start-month 2020-01 --end-month 2022-12
 
-```bash
-python main.py --start-month 2024-01 --end-month 2024-06 \
+# Choose a specific scorer or selector:
+python main.py --scorer historical_profit_rate --selector default
+
+# All overrides:
+python main.py --start-month 2020-01 --end-month 2022-12 \
+    --scorer activation_level --selector default \
     --data-root /path/to/data \
     --log-level DEBUG
 ```
 
 The script writes `opportunities.csv` at the **project root** (same directory as `main.py`).
+
+Available scorers: `activation_level` (default), `historical_profit_rate`. Available selectors: `default`. Adding a new one requires only one line in the corresponding registry dict at the top of `main.py`.
 
 ---
 
@@ -66,16 +73,32 @@ The script writes `opportunities.csv` at the **project root** (same directory as
 
 ```
 DataChallenge2026/
-├── main.py                  # Entry point — month-by-month loop, CLI argument parsing
+├── main.py                  # Entry point — month-by-month loop, scorer/selector registry, CLI
+├── eval_wrapper.py          # Evaluation orchestrator — runs main.py + evaluate.py, writes JSON
+├── evaluate.py              # Official scoring script (read-only, provided by organizers)
 ├── datachallenge/           # Core Python package
 │   ├── __init__.py
 │   ├── config.py            # Settings loaded from .env (DATA_ROOT, LOG_LEVEL, LOG_FILE)
 │   ├── logger.py            # Shared logger (stderr + optional file handler)
 │   ├── loader.py            # CustomDataLoader — queries parquet files via DuckDB
-│   └── schemas.py           # TypedDict definitions documenting DataFrame column schemas
-├── tests/                   # Integration tests (requires real data under data/)
+│   ├── schemas.py           # TypedDict definitions documenting DataFrame column schemas
+│   ├── candidates.py        # build_candidate_pool — expands known EIDs to both PEAKID values
+│   ├── scoring.py           # ScorerProtocol + score_by_activation_level / score_by_historical_profit_rate
+│   ├── selection.py         # SelectorProtocol + select_opportunities (10–100 constraint)
+│   └── output.py            # write_opportunities — validates and writes opportunities.csv
+├── tests/                   # Unit + integration tests (33 tests, all passing)
 │   ├── conftest.py          # Shared pytest fixtures (loader instance)
-│   └── test_loader.py       # Tests for loader methods and output generation
+│   ├── test_loader.py       # Integration tests for loader methods
+│   ├── test_scoring.py      # Unit tests for scoring functions (mock-based)
+│   ├── test_selection.py    # Unit tests for select_opportunities
+│   └── test_output.py       # Unit tests for write_opportunities
+├── results/                 # Committed evaluation results — one JSON per (scorer, selector, period)
+│   ├── activation_level__default__202001_202212.json
+│   ├── activation_level__default__202301_202312.json
+│   ├── historical_profit_rate__default__202001_202212.json
+│   └── historical_profit_rate__default__202301_202312.json
+├── notebooks/               # Data exploration notebooks (committed)
+├── HYPOTHESES.md            # Data analysis, hypothesis verdicts, modeling approach
 ├── .env.example             # Template for environment variables
 ├── requirements.txt         # Pinned dependencies (use uv sync to install)
 └── data/                    # Local data folder (git-ignored)
@@ -89,20 +112,33 @@ DataChallenge2026/
 
 ## 7. Evaluating Your Output
 
-`evaluate.py` is the official scoring script provided by MAG Energy Solutions. It reads your `opportunities.csv` and computes the two quantitative axes of the grading rubric against the actual realized data.
+### Official script — `evaluate.py`
+
+Provided by MAG Energy Solutions (read-only). Reads `opportunities.csv` and computes the two quantitative grading axes against realized data.
 
 ```bash
 python evaluate.py opportunities.csv --start-month 2020-01 --end-month 2023-12
 ```
 
-It outputs:
-- **Axe 1 — F1-score** (precision, recall, F1 for ON-Peak and OFF-Peak separately, then averaged)
-- **Axe 2 — Net profit** (sum of `|PR| − C` over all selected opportunities)
-- A month-by-month breakdown (selections, TP, FP, profit per month)
+Outputs: F1-score (ON/OFF separately + average), net profit, month-by-month breakdown.
 
-> **Note**: `evaluate.py` reads data directly from `./data/` relative to its own location and does not accept a `--data-root` override. Run it from the project root with data in `data/`.
+> `evaluate.py` reads data from `./data/` relative to its location. Run it from the project root. **Do not modify it.**
 
-> **Do not modify** `evaluate.py` — it is read-only and provided by the organizers.
+### Evaluation wrapper — `eval_wrapper.py`
+
+Automates the full loop: runs `main.py`, then `evaluate.py`, parses the output, and saves a JSON result to `results/`.
+
+```bash
+# Standard run — generates opportunities.csv then evaluates:
+python eval_wrapper.py --scorer activation_level --selector default \
+    --start-month 2020-01 --end-month 2022-12
+
+# Re-evaluate an existing opportunities.csv without re-running main.py:
+python eval_wrapper.py --scorer activation_level --selector default \
+    --start-month 2020-01 --end-month 2022-12 --dry-run
+```
+
+Output is saved to `results/{scorer}__{selector}__{start}_{end}.json` with aggregate metrics and a per-month breakdown. Results in `results/` are committed — they are the record of what was tried and when.
 
 ---
 
@@ -123,26 +159,39 @@ The anti-leakage cutoff is enforced automatically for every month — there is n
 
 ## 9. Methodological Approach
 
-> **TODO**: Describe the scoring/selection approach here once implemented.
->
-> Expected content:
-> - Feature engineering from `sim_monthly`, `sim_daily`, historical prices and costs
-> - Model or heuristic used to estimate `PREDICTED_PROFIT` per triplet (EID, MONTH, PEAKID)
-> - How scenarios (SCENARIOID 1, 2, 3) are combined or used individually
-> - How the 10–100 opportunity constraint is applied
-> - Key design decisions and their justifications
-> - Any domain-driven signals leveraged (ACTIVATIONLEVEL, impact variables, PSM/PSD)
+Two scoring strategies are implemented in `datachallenge/scoring.py` and selectable via `--scorer`:
+
+### `activation_level` (current default)
+Score = `mean(m_ACTIVATIONLEVEL)` across all 3 monthly simulation scenarios for month M+1. Triplets absent from the sims receive score 0. The top candidates by score are selected (10–100 per month).
+
+Despite the hypothesis analysis showing ACTIVATIONLEVEL is negatively associated with profitability at the population level (AUC=0.424), this scorer outperforms the historical baseline in empirical evaluation — see Section 10 for details.
+
+### `historical_profit_rate`
+Score = fraction of months where `|PR| − C > 0`, computed over all months strictly before the cutoff (month M and earlier). Uses only price/cost data available at decision time — no future leakage. EIDs with no history receive the global average win rate as a fallback.
+
+**Selection pipeline** (`datachallenge/selection.py`): deduplicates by averaging scores per triplet, sorts descending, selects the top *n* where *n* = number of candidates with score > 0, clamped to [10, 100]. **Output** (`datachallenge/output.py`): writes `opportunities.csv` with columns `TARGET_MONTH`, `PEAK_TYPE`, `EID`.
+
+**Anti-leak guarantee**: the 7th-of-month cutoff is strictly enforced in the loader and in every scorer. See `HYPOTHESES.md` for full data analysis.
 
 ---
 
 ## 10. Results and Analysis
 
-> **TODO**: Fill in once the scoring algorithm is implemented and run on the validation set.
->
-> Expected content:
-> - F1-score (precision/recall) on the 2023 validation set, broken down by ON-Peak and OFF-Peak
-> - Total net profit on the validation set
-> - Distribution of selected opportunities per month (count, profitable fraction)
-> - Comparison with baseline (e.g. random selection)
-> - Error analysis: common false-positive and false-negative patterns
-> - Potential improvements and open questions
+Full per-run results (with monthly breakdowns) are in `results/`. Evaluation performed with `eval_wrapper.py` on 2020–2022 (train) and 2023 (validation).
+
+### Model comparison table
+
+| Scorer | Selector | Period | F1 avg | F1 OFF | F1 ON | Precision | Recall | Net Profit |
+|--------|----------|--------|--------|--------|-------|-----------|--------|------------|
+| `activation_level` | `default` | 2020–2022 (train) | **0.1337** | 0.1362 | 0.1312 | 0.360 | 0.082 | **3,471,724** |
+| `historical_profit_rate` | `default` | 2020–2022 (train) | 0.0478 | 0.0493 | 0.0464 | 0.132 | 0.029 | 783,256 |
+| `activation_level` | `default` | 2023 (val) | **0.0967** | 0.0977 | 0.0957 | 0.202 | 0.064 | **132,999** |
+| `historical_profit_rate` | `default` | 2023 (val) | 0.0354 | 0.0308 | 0.0400 | 0.074 | 0.029 | 17,641 |
+
+### Interpretation
+
+**`activation_level` wins on all metrics** across both periods, despite H1 in `HYPOTHESES.md` concluding it is anti-predictive at the population level (AUC=0.424, Spearman r=−0.12). The likely explanation: the anti-predictive finding applies to threshold-based selection (select all above 42% activation → F1=0 in 2023), whereas **top-k ranking** still concentrates more active, better-documented constraints in the top 100 — and those constraints, even if already priced in on average, involve larger price swings that generate higher absolute profit.
+
+**`historical_profit_rate` underperforms** its theoretical motivation (H4: 69% of pairs have >50% win rate). The most likely cause is that the historical signal is strongly diluted by the candidate pool expansion: the pool includes all known EIDs × 2 PEAKID values, meaning many candidates share similar historical rates and the ranking does not spread as effectively across months.
+
+**Current recommendation**: use `activation_level + default` (the default with no extra arguments). The next improvement to explore is an inverted or hybrid signal (see `HYPOTHESES.md` § Model B) or candidate pool refinement.
