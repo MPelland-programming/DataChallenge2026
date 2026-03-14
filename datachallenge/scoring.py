@@ -13,6 +13,7 @@ from typing import Protocol
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.preprocessing import StandardScaler
 
 from datachallenge.features import FEATURE_COLUMNS, build_feature_matrix
 from datachallenge.loader import CustomDataLoader
@@ -166,7 +167,7 @@ def score_by_maxime_short(
     if train_df.empty or train_df["PROFIT"].isna().all():
         return result_empty
 
-    X_train = train_df[FEATURE_COLUMNS].values
+    X_train_raw = train_df[FEATURE_COLUMNS].values
     y_profit = train_df["PROFIT"].values
     y_class = (y_profit > 0).astype(int)
 
@@ -174,7 +175,11 @@ def score_by_maxime_short(
     if len(np.unique(y_class)) < 2:
         return result_empty
 
-    # ── 4. Train heads ────────────────────────────────────────────────────────
+    # ── 4. Scale features (fit on train only) ────────────────────────────────
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train_raw)
+
+    # ── 5. Train heads ────────────────────────────────────────────────────────
     lr = LogisticRegression(class_weight="balanced", max_iter=1000, random_state=42)
     lr.fit(X_train, y_class)
 
@@ -183,7 +188,7 @@ def score_by_maxime_short(
     ridge = Ridge()
     ridge.fit(X_train, y_profit, sample_weight=sample_weights)
 
-    # ── 5. Build feature matrix for candidates and predict ────────────────────
+    # ── 6. Build feature matrix for candidates and predict ────────────────────
     cand_features = build_feature_matrix(loader, candidates, cutoff_date)
     result = candidates[["EID", "MONTH", "PEAKID"]].merge(
         cand_features[["EID", "MONTH", "PEAKID"] + FEATURE_COLUMNS],
@@ -191,7 +196,7 @@ def score_by_maxime_short(
         how="left",
     )
 
-    X_cand = result[FEATURE_COLUMNS].fillna(0.0).values
+    X_cand = scaler.transform(result[FEATURE_COLUMNS].fillna(0.0).values)
     P = lr.predict_proba(X_cand)[:, 1]  # probability of profit
     V = ridge.predict(X_cand)           # predicted profit value
 
