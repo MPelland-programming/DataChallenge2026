@@ -4,6 +4,7 @@ import pandas as pd
 from datachallenge.loader import CustomDataLoader
 from datachallenge.config import settings
 from datachallenge.logger import logger
+from datachallenge.selection import score_by_activation_level
 
 
 # Get input
@@ -119,21 +120,21 @@ for target_date in target_months:
         'PEAKID': [0] * len(known_eids) + [1] * len(known_eids),
     })
 
-    # ---------------------------------------------------------
-    # TODO: Scoring logic here
-    # Load monthly sims for target_month, daily sims up to cutoff,
-    # historical profits, then score each candidate.
-    # Example:
-    #   monthly_sim = loader.get_monthly_data(candidates)
-    #   daily_sim = loader.get_daily_data(candidates, cutoff_date)
-    #   historical_profit = loader.get_price_cost_profit(filterdf=historical)
-    # Then build features, rank, and select top 10-100.
-    # ---------------------------------------------------------
+    # Score candidates by mean ACTIVATIONLEVEL in monthly sims for target_month
+    scored = score_by_activation_level(loader, candidates, cutoff_date)
 
-    # Placeholder: select top 50 random (replace with real scoring)
-    n_select = min(50, len(candidates))
-    selected = candidates.sample(n=n_select, random_state=42)
+    # Apply 10–100 selection constraint (mirrors select_best_predict_and_print logic)
+    scored_sorted = scored.sort_values('PREDICTED_PROFIT', ascending=False)
+    n_profitable = int((scored_sorted['PREDICTED_PROFIT'] > 0).sum())
+    if n_profitable < 10:
+        selected = scored_sorted.head(10)[['EID', 'MONTH', 'PEAKID']]
+    elif n_profitable <= 100:
+        selected = scored_sorted.head(n_profitable)[['EID', 'MONTH', 'PEAKID']]
+    else:
+        selected = scored_sorted.head(100)[['EID', 'MONTH', 'PEAKID']]
 
+    logger.info(f"[Target: {target_month}] Selected {len(selected)} opportunities "
+                f"({n_profitable} with positive ACTIVATIONLEVEL score)")
     all_selections.append(selected)
 
 # --- Build output CSV
