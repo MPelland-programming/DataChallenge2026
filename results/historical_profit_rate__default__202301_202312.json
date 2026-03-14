@@ -1,0 +1,111 @@
+{
+  "scorer": "historical_profit_rate",
+  "selector": "default",
+  "start_month": "2023-01",
+  "end_month": "2023-12",
+  "aggregate": {
+    "f1_off": 0.0308,
+    "f1_on": 0.04,
+    "f1_avg": 0.0354,
+    "precision_off": 0.0697,
+    "precision_on": 0.0777,
+    "recall_off": 0.0198,
+    "recall_on": 0.0269,
+    "tp_off": 37,
+    "fp_off": 494,
+    "fn_off": 1836,
+    "tp_on": 52,
+    "fp_on": 617,
+    "fn_on": 1882,
+    "net_profit": 17640.72,
+    "n_selected": 1200,
+    "n_profitable": 89,
+    "n_losing": 1111
+  },
+  "monthly": [
+    {
+      "month": "2023-01",
+      "n_selected": 100,
+      "tp": 11,
+      "fp": 89,
+      "profit": 12124.91
+    },
+    {
+      "month": "2023-02",
+      "n_selected": 100,
+      "tp": 10,
+      "fp": 90,
+      "profit": -1653.09
+    },
+    {
+      "month": "2023-03",
+      "n_selected": 100,
+      "tp": 10,
+      "fp": 90,
+      "profit": -7400.56
+    },
+    {
+      "month": "2023-04",
+      "n_selected": 100,
+      "tp": 11,
+      "fp": 89,
+      "profit": 7463.73
+    },
+    {
+      "month": "2023-05",
+      "n_selected": 100,
+      "tp": 11,
+      "fp": 89,
+      "profit": 9299.22
+    },
+    {
+      "month": "2023-06",
+      "n_selected": 100,
+      "tp": 4,
+      "fp": 96,
+      "profit": -74.22
+    },
+    {
+      "month": "2023-07",
+      "n_selected": 100,
+      "tp": 6,
+      "fp": 94,
+      "profit": 1157.76
+    },
+    {
+      "month": "2023-08",
+      "n_selected": 100,
+      "tp": 4,
+      "fp": 96,
+      "profit": 520.38
+    },
+    {
+      "month": "2023-09",
+      "n_selected": 100,
+      "tp": 7,
+      "fp": 93,
+      "profit": -3774.03
+    },
+    {
+      "month": "2023-10",
+      "n_selected": 100,
+      "tp": 3,
+      "fp": 97,
+      "profit": -1847.37
+    },
+    {
+      "month": "2023-11",
+      "n_selected": 100,
+      "tp": 6,
+      "fp": 94,
+      "profit": 3721.27
+    },
+    {
+      "month": "2023-12",
+      "n_selected": 100,
+      "tp": 6,
+      "fp": 94,
+      "profit": -1897.27
+    }
+  ]
+}
