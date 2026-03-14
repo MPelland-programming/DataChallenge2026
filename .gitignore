@@ -1,6 +1,7 @@
 # Data files
 *.parquet
 data/
+ressources/
 
 # Environment variables
 .env
