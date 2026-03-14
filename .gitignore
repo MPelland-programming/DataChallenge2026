@@ -23,3 +23,6 @@ __pycache__/
 
 # Task file
 TODO.md
+
+# Generated plot images (save locally, do not commit)
+images/
