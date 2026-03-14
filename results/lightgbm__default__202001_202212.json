@@ -1,0 +1,280 @@
+{
+  "scorer": "lightgbm",
+  "selector": "default",
+  "start_month": "2020-01",
+  "end_month": "2022-12",
+  "universe": "sim",
+  "aggregate": {
+    "f1_off": 0.0397,
+    "f1_on": 0.0362,
+    "f1_avg": 0.038,
+    "precision_off": 0.1126,
+    "precision_on": 0.0954,
+    "recall_off": 0.0241,
+    "recall_on": 0.0224,
+    "tp_off": 181,
+    "fp_off": 1426,
+    "fn_off": 7338,
+    "tp_on": 173,
+    "fp_on": 1640,
+    "fn_on": 7562,
+    "net_profit": 323944.62,
+    "n_selected": 3420,
+    "n_profitable": 354,
+    "n_losing": 3066
+  },
+  "monthly": [
+    {
+      "month": "2020-01",
+      "n_selected": 10,
+      "tp": 0,
+      "fp": 10,
+      "profit": 0.0
+    },
+    {
+      "month": "2020-02",
+      "n_selected": 10,
+      "tp": 0,
+      "fp": 10,
+      "profit": 0.0
+    },
+    {
+      "month": "2020-03",
+      "n_selected": 100,
+      "tp": 43,
+      "fp": 57,
+      "profit": 41272.38
+    },
+    {
+      "month": "2020-04",
+      "n_selected": 100,
+      "tp": 23,
+      "fp": 77,
+      "profit": 9570.39
+    },
+    {
+      "month": "2020-05",
+      "n_selected": 100,
+      "tp": 20,
+      "fp": 80,
+      "profit": 5789.32
+    },
+    {
+      "month": "2020-06",
+      "n_selected": 100,
+      "tp": 21,
+      "fp": 79,
+      "profit": 1189.03
+    },
+    {
+      "month": "2020-07",
+      "n_selected": 100,
+      "tp": 16,
+      "fp": 84,
+      "profit": -17003.2
+    },
+    {
+      "month": "2020-08",
+      "n_selected": 100,
+      "tp": 31,
+      "fp": 69,
+      "profit": 6477.96
+    },
+    {
+      "month": "2020-09",
+      "n_selected": 100,
+      "tp": 40,
+      "fp": 60,
+      "profit": 28194.3
+    },
+    {
+      "month": "2020-10",
+      "n_selected": 100,
+      "tp": 9,
+      "fp": 91,
+      "profit": 7565.88
+    },
+    {
+      "month": "2020-11",
+      "n_selected": 100,
+      "tp": 22,
+      "fp": 78,
+      "profit": 19930.6
+    },
+    {
+      "month": "2020-12",
+      "n_selected": 100,
+      "tp": 27,
+      "fp": 73,
+      "profit": 31794.19
+    },
+    {
+      "month": "2021-01",
+      "n_selected": 100,
+      "tp": 9,
+      "fp": 91,
+      "profit": 12696.14
+    },
+    {
+      "month": "2021-02",
+      "n_selected": 100,
+      "tp": 7,
+      "fp": 93,
+      "profit": 15238.77
+    },
+    {
+      "month": "2021-03",
+      "n_selected": 100,
+      "tp": 3,
+      "fp": 97,
+      "profit": 2406.53
+    },
+    {
+      "month": "2021-04",
+      "n_selected": 100,
+      "tp": 6,
+      "fp": 94,
+      "profit": -2186.52
+    },
+    {
+      "month": "2021-05",
+      "n_selected": 100,
+      "tp": 4,
+      "fp": 96,
+      "profit": 1188.74
+    },
+    {
+      "month": "2021-06",
+      "n_selected": 100,
+      "tp": 8,
+      "fp": 92,
+      "profit": 19401.0
+    },
+    {
+      "month": "2021-07",
+      "n_selected": 100,
+      "tp": 4,
+      "fp": 96,
+      "profit": 1567.93
+    },
+    {
+      "month": "2021-08",
+      "n_selected": 100,
+      "tp": 2,
+      "fp": 98,
+      "profit": 12005.47
+    },
+    {
+      "month": "2021-09",
+      "n_selected": 100,
+      "tp": 1,
+      "fp": 99,
+      "profit": 69.34
+    },
+    {
+      "month": "2021-10",
+      "n_selected": 100,
+      "tp": 7,
+      "fp": 93,
+      "profit": 3692.43
+    },
+    {
+      "month": "2021-11",
+      "n_selected": 100,
+      "tp": 2,
+      "fp": 98,
+      "profit": 735.98
+    },
+    {
+      "month": "2021-12",
+      "n_selected": 100,
+      "tp": 5,
+      "fp": 95,
+      "profit": 2569.98
+    },
+    {
+      "month": "2022-01",
+      "n_selected": 100,
+      "tp": 1,
+      "fp": 99,
+      "profit": 605.25
+    },
+    {
+      "month": "2022-02",
+      "n_selected": 100,
+      "tp": 7,
+      "fp": 93,
+      "profit": 7372.45
+    },
+    {
+      "month": "2022-03",
+      "n_selected": 100,
+      "tp": 6,
+      "fp": 94,
+      "profit": 20046.46
+    },
+    {
+      "month": "2022-04",
+      "n_selected": 100,
+      "tp": 5,
+      "fp": 95,
+      "profit": 18368.61
+    },
+    {
+      "month": "2022-05",
+      "n_selected": 100,
+      "tp": 2,
+      "fp": 98,
+      "profit": 673.0
+    },
+    {
+      "month": "2022-06",
+      "n_selected": 100,
+      "tp": 2,
+      "fp": 98,
+      "profit": 165.46
+    },
+    {
+      "month": "2022-07",
+      "n_selected": 100,
+      "tp": 1,
+      "fp": 99,
+      "profit": -1518.61
+    },
+    {
+      "month": "2022-08",
+      "n_selected": 100,
+      "tp": 8,
+      "fp": 92,
+      "profit": 3712.17
+    },
+    {
+      "month": "2022-09",
+      "n_selected": 100,
+      "tp": 1,
+      "fp": 99,
+      "profit": -1610.46
+    },
+    {
+      "month": "2022-10",
+      "n_selected": 100,
+      "tp": 2,
+      "fp": 98,
+      "profit": 8200.49
+    },
+    {
+      "month": "2022-11",
+      "n_selected": 100,
+      "tp": 2,
+      "fp": 98,
+      "profit": 209.59
+    },
+    {
+      "month": "2022-12",
+      "n_selected": 100,
+      "tp": 7,
+      "fp": 93,
+      "profit": 63553.55
+    }
+  ]
+}
