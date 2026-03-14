@@ -442,7 +442,7 @@ def score_by_lightgbm(
     if len(train_df) < MIN_CHILD_SAMPLES:
         return result_empty
 
-    X_train = train_df[FEATURE_COLUMNS].values
+    X_train = train_df[FEATURE_COLUMNS]  # DataFrame — preserves feature names for LightGBM
     y_class = (train_df["PROFIT"].values > 0).astype(int)
 
     # Need at least 2 classes to train a classifier
@@ -452,6 +452,8 @@ def score_by_lightgbm(
     # ── 4. Train LightGBM classifier ──────────────────────────────────────────
     # Hyperparams from coworkers (optimised for this dataset).
     # No StandardScaler needed — tree splits are rank-based.
+    # Pass DataFrame (not numpy) so LightGBM stores feature names; predict_proba
+    # must also receive a DataFrame with the same names to avoid sklearn warnings.
     model = LGBMClassifier(
         n_estimators=200,
         max_depth=4,
@@ -474,7 +476,7 @@ def score_by_lightgbm(
         how="left",
     )
 
-    X_cand = result[FEATURE_COLUMNS].fillna(0.0).values
+    X_cand = result[FEATURE_COLUMNS].fillna(0.0)  # DataFrame — names match fit
     result["PREDICTED_PROFIT"] = model.predict_proba(X_cand)[:, 1]
 
     return result[["EID", "MONTH", "PEAKID", "PREDICTED_PROFIT"]]
