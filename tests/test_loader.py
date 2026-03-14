@@ -64,13 +64,18 @@ def test_get_daily_data_cutoff(loader):
 def test_select_and_write_opportunities(loader, tmp_path):
     triplets = loader.get_all_triplets(CUTOFF_DATE)
 
-    # Use real triplets so the input is realistic, but attach synthetic
-    # PREDICTED_PROFIT = 1, 2, 3, ... The pipeline only cares about ranking,
-    # not the actual values, so this is sufficient and fully deterministic.
-    resultdf = triplets.copy()
-    resultdf["PREDICTED_PROFIT"] = range(1, len(resultdf) + 1)
+    # Use a single month to mirror real usage: select_opportunities is called
+    # once per target month in main.py, and write_opportunities receives the
+    # combined per-month selections. Using multi-month raw triplets would spread
+    # 100 picks unevenly across months, triggering the per-month 10–100 check.
+    single_month = triplets[triplets["MONTH"] == "2020-06"].copy()
+    if len(single_month) < 10:
+        pytest.skip("Not enough 2020-06 triplets in test data")
 
-    selected = select_opportunities(resultdf, min_opp=10, max_opp=100)
+    # Attach synthetic PREDICTED_PROFIT = 1, 2, 3, ... ranking only matters.
+    single_month["PREDICTED_PROFIT"] = range(1, len(single_month) + 1)
+
+    selected = select_opportunities(single_month, min_opp=10, max_opp=100)
     out_path = str(tmp_path / "opportunities.csv")
     write_opportunities(selected, out_path)
 
