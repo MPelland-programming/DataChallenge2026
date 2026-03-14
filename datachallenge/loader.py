@@ -144,6 +144,42 @@ class CustomDataLoader:
 
         return monthlysim
 
+    def get_sim_universe(self, target_month: str) -> pd.DataFrame:
+        """
+        Return all distinct (EID, PEAKID) combinations present in the monthly
+        simulation files for the given target month.
+
+        This is the candidate universe for scoring: ~170k (EID, PEAKID) pairs
+        per month, vs ~6k from get_all_triplets (prices+costs only).
+
+        Args:
+            target_month: 'YYYY-MM', the target month M+1 being predicted.
+
+        Returns:
+            DataFrame with columns EID, PEAKID (~170k rows expected).
+        """
+        target_year = target_month[:4]
+        chunks = []
+
+        for mm in self.msimulation:
+            fileyear = os.path.basename(mm).split(".")[0][-4:]
+            if fileyear != target_year:
+                continue
+
+            temp = duckdb.query(f"""
+                SELECT DISTINCT EID, PEAKID
+                FROM read_parquet('{mm}')
+                WHERE strftime(DATETIME, '%Y-%m') = '{target_month}'
+            """).to_df()
+
+            if not temp.empty:
+                chunks.append(temp)
+
+        if not chunks:
+            return pd.DataFrame(columns=["EID", "PEAKID"])
+
+        return pd.concat(chunks, ignore_index=True).drop_duplicates().reset_index(drop=True)
+
     def get_daily_price(self, filterdf) -> pd.DataFrame:  # rows ~ PriceRow
         dailyprice = duckdb.query(f"""
             SELECT p.*

@@ -12,3 +12,4 @@ scipy
 plotly
 jupyterlab
 ipykernel
+lightgbm

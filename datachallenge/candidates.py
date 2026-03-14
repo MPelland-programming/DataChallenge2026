@@ -16,35 +16,35 @@ def build_candidate_pool(
     target_month: str,
 ) -> pd.DataFrame:
     """
-    Build the candidate pool for target month M+1.
+    Build the candidate pool for target month M+1 from the monthly sim universe.
 
-    Retrieves all EIDs observed at or before cutoff_date and expands them to
-    both PEAKID=0 (OFF-Peak) and PEAKID=1 (ON-Peak) for the target month.
+    Retrieves all (EID, PEAKID) pairs present in the monthly simulation files
+    for the target month. This covers ~170k combinations per month — ~28× more
+    than the prices+costs universe (~6k), which is heavily survivor-biased.
 
-    Design choice: we expand every known EID to both PEAKID values regardless
-    of which combinations appear in historical data, because both products exist
-    in the FTR market even if not previously observed together.
+    Design choice: we use the sim universe as candidates because:
+    - prices+costs covers only ~3.5% of the FTR market (already-traded EIDs)
+    - The other 96.5% are invisible to any scorer using get_all_triplets
+    - Data exploration shows zero-sim EIDs (91% profitable) and absent-from-sim
+      EIDs (83% profitable) are MORE profitable than non-zero-sim (68%)
 
-    Do NOT prune zero-sim or absent EIDs: data exploration showed that EIDs
-    with zero ACTIVATIONLEVEL in sims are 91% profitable, and EIDs absent from
-    sims entirely are 83% profitable — both higher than non-zero-sim EIDs (68%).
-    Any scorer that assigns them score 0 actively harms recall, but the candidate
-    pool must still include them so higher-quality scorers can rank them correctly.
+    Do NOT prune zero-sim or absent EIDs: any scorer that assigns them score 0
+    actively harms recall, but the candidate pool must still include them so
+    higher-quality scorers can rank them correctly.
 
     Args:
         loader:        Initialised CustomDataLoader.
-        cutoff_date:   'YYYY-MM-DD', the 7th of month M.
+        cutoff_date:   'YYYY-MM-DD', the 7th of month M. (Unused here — the sim
+                       universe is queried by target_month directly — but kept
+                       for interface consistency with the rest of the pipeline.)
         target_month:  'YYYY-MM', the month M+1 being predicted.
 
     Returns:
         DataFrame with columns EID, MONTH, PEAKID.
     """
-    historical = loader.get_all_triplets(cutoff_date)
-    known_eids = historical['EID'].unique()
+    sim_universe = loader.get_sim_universe(target_month)
 
-    candidates = pd.DataFrame({
-        'EID': list(known_eids) * 2,
-        'MONTH': [target_month] * len(known_eids) * 2,
-        'PEAKID': [0] * len(known_eids) + [1] * len(known_eids),
-    })
-    return candidates
+    candidates = sim_universe.copy()
+    candidates["MONTH"] = target_month
+
+    return candidates[["EID", "MONTH", "PEAKID"]].reset_index(drop=True)

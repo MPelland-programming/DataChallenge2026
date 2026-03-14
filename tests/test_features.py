@@ -1,5 +1,5 @@
 """
-Unit tests for datachallenge/features.py (mock-based, no real data required).
+Unit tests for datachallenge/features.py V3 (mock-based, no real data required).
 """
 
 import math
@@ -109,8 +109,33 @@ def test_output_has_correct_columns():
 
 
 def test_feature_column_count():
-    """FEATURE_COLUMNS must contain exactly 33 features."""
-    assert len(FEATURE_COLUMNS) == 33
+    """FEATURE_COLUMNS must contain exactly 36 features (V3)."""
+    assert len(FEATURE_COLUMNS) == 36
+
+
+def test_feature_column_names_v3():
+    """V3 renamed features must be present; old V1 names must be absent."""
+    v3_names = {
+        "mean_activation", "max_activation", "daily_mean_activation",
+        "mean_load", "hist_win_rate",
+        "sum_abs_psm_s1", "sum_abs_psm_s2",
+        "psm_cv_scenarios",
+        "pct_high_activation", "daily_max_activation", "monthly_daily_ratio",
+        "hist_n_months", "hist_mean_profit", "hist_std_profit",
+        "hist_last_6m_win_rate", "hist_consecutive_wins",
+        "hist_seasonal_win_rate", "hist_mean_cost", "hist_mean_price",
+    }
+    old_v1_names = {
+        "m_ACT_mean", "m_ACT_max", "d_ACT_mean", "m_LOADIMPACT_mean",
+        "hist_profit_rate", "m_PSM_mean", "m_PSM_min", "m_PSM_std",
+        "act_psm_interaction", "psm_std_scenarios", "all_scenarios_profitable",
+        "confidence_adjusted_profit", "sum_abs_psm_s3",
+    }
+    feat_set = set(FEATURE_COLUMNS)
+    for name in v3_names:
+        assert name in feat_set, f"V3 feature '{name}' missing from FEATURE_COLUMNS"
+    for name in old_v1_names:
+        assert name not in feat_set, f"Old V1 feature '{name}' still in FEATURE_COLUMNS"
 
 
 # ── Test 2: one row per triplet, no duplicates ───────────────────────────────
@@ -142,7 +167,6 @@ def test_duplicate_input_deduplicated():
 def test_daily_sim_called_with_cutoff_month():
     """
     get_daily_data must be called with filterdf.MONTH == M (cutoff month), not M+1.
-    Requesting M+1 daily sims would require future data not yet available.
     """
     loader = _make_loader_no_data()
     build_feature_matrix(loader, _make_triplets(2), CUTOFF_DATE)
@@ -159,7 +183,7 @@ def test_daily_sim_called_with_cutoff_month():
 def test_historical_profit_excludes_cutoff_month():
     """
     get_price_cost_profit for historical features must only be called with
-    months strictly before M (anti-leak: M's partial prices would leak).
+    months strictly before M (anti-leak).
     """
     loader = MagicMock()
     loader.get_monthly_data.return_value = pd.DataFrame(
@@ -168,7 +192,6 @@ def test_historical_profit_excludes_cutoff_month():
     loader.get_daily_data.return_value = pd.DataFrame(
         columns=["SCENARIOID", "EID", "DATETIME", "PEAKID"]
     )
-    # get_all_triplets returns a mix: M and a prior month
     loader.get_all_triplets.return_value = pd.DataFrame(
         {
             "EID": [1, 1],
@@ -183,8 +206,6 @@ def test_historical_profit_excludes_cutoff_month():
     triplets = pd.DataFrame({"EID": [1], "MONTH": [TARGET_MONTH], "PEAKID": [0]})
     build_feature_matrix(loader, triplets, CUTOFF_DATE)
 
-    # The historical call (for hist_profit_rate) must exclude MONTH = M
-    # The cost_proxy_m call may use MONTH = M — identify the historical call
     historical_calls = [
         c for c in loader.get_price_cost_profit.call_args_list
         if not (c[0][0]["MONTH"] == CUTOFF_MONTH).all()
@@ -199,7 +220,6 @@ def test_historical_profit_excludes_cutoff_month():
 def test_cost_proxy_m_uses_cutoff_month():
     """
     cost_proxy must query month M costs (not historical months, not M+1).
-    The cost_proxy_m call to get_price_cost_profit must use filterdf.MONTH == M.
     """
     loader = _make_loader_no_data()
     triplets = pd.DataFrame({"EID": [1], "MONTH": [TARGET_MONTH], "PEAKID": [0]})
@@ -247,44 +267,19 @@ def test_sin2_plus_cos2_equals_one():
     assert (abs(s2c2 - 1.0) < 1e-9).all()
 
 
-# ── Test 5: all_scenarios_profitable is binary ────────────────────────────────
-
-
-def test_all_scenarios_profitable_binary():
-    """all_scenarios_profitable must be 0.0 or 1.0 for every row."""
-    loader = _make_loader_no_data()
-    loader.get_monthly_data.return_value = _make_monthly_sim_rows(
-        [1, 2, 3], TARGET_MONTH
-    )
-    result = build_feature_matrix(loader, _make_triplets(3), CUTOFF_DATE)
-    assert result["all_scenarios_profitable"].isin([0.0, 1.0]).all()
-
-
-def test_all_scenarios_profitable_true_when_all_positive():
-    """all_scenarios_profitable = 1 when cost_proxy = 0 and abs_psm > 0."""
-    loader = _make_loader_no_data()
-    loader.get_monthly_data.return_value = _make_monthly_sim_rows(
-        [1], TARGET_MONTH, psm=10.0
-    )
-    triplets = pd.DataFrame({"EID": [1], "MONTH": [TARGET_MONTH], "PEAKID": [0]})
-    result = build_feature_matrix(loader, triplets, CUTOFF_DATE)
-    assert result["all_scenarios_profitable"].iloc[0] == 1.0
-
-
-# ── Test 6: absent from sims → 0.0 ───────────────────────────────────────────
+# ── Test 5: absent from sims → 0.0 ───────────────────────────────────────────
 
 
 def test_absent_from_sims_get_zero():
     """Triplets not in any sim must receive 0.0 for all sim-derived features."""
     loader = _make_loader_no_data()
-    # Only EID=1, PEAKID=0 has monthly sim data
     loader.get_monthly_data.return_value = _make_monthly_sim_rows([1], TARGET_MONTH)
     triplets = _make_triplets(3)
     result = build_feature_matrix(loader, triplets, CUTOFF_DATE)
 
     sim_features = [
-        "m_ACT_mean", "m_ACT_max", "m_PSM_mean", "m_PSM_min", "m_PSM_std",
-        "n_hours_active", "mean_wind", "mean_sum_abs_psm", "psm_std_scenarios",
+        "mean_activation", "max_activation", "n_hours_active",
+        "sum_abs_psm_s1", "sum_abs_psm_s2", "psm_cv_scenarios",
     ]
     absent = result[result["EID"] != 1]
     for col in sim_features:
@@ -298,11 +293,11 @@ def test_no_nan_in_output():
     assert not result[FEATURE_COLUMNS].isnull().any().any()
 
 
-# ── Test 7: hist_profit_rate in [0, 1] ───────────────────────────────────────
+# ── Test 6: hist_win_rate in [0, 1] ──────────────────────────────────────────
 
 
-def test_hist_profit_rate_in_unit_interval():
-    """hist_profit_rate must be in [0.0, 1.0] for every row."""
+def test_hist_win_rate_in_unit_interval():
+    """hist_win_rate must be in [0.0, 1.0] for every row."""
     loader = MagicMock()
     loader.get_monthly_data.return_value = pd.DataFrame(
         columns=["SCENARIOID", "EID", "DATETIME", "PEAKID"]
@@ -317,7 +312,6 @@ def test_hist_profit_rate_in_unit_interval():
             "PEAKID": [0, 0, 1, 1],
         }
     )
-    # get_price_cost_profit is called twice: once for historical, once for cost_proxy_m
     loader.get_price_cost_profit.return_value = pd.DataFrame(
         {
             "EID": [1, 1, 2, 2],
@@ -331,12 +325,12 @@ def test_hist_profit_rate_in_unit_interval():
 
     result = build_feature_matrix(loader, _make_triplets(3), CUTOFF_DATE)
 
-    assert (result["hist_profit_rate"] >= 0.0).all()
-    assert (result["hist_profit_rate"] <= 1.0).all()
+    assert (result["hist_win_rate"] >= 0.0).all()
+    assert (result["hist_win_rate"] <= 1.0).all()
 
 
-def test_hist_profit_rate_fallback_for_new_eid():
-    """EIDs with no history receive the global average profit rate."""
+def test_hist_win_rate_fallback_for_new_eid():
+    """EIDs with no history receive the global average win rate."""
     loader = MagicMock()
     loader.get_monthly_data.return_value = pd.DataFrame(
         columns=["SCENARIOID", "EID", "DATETIME", "PEAKID"]
@@ -344,7 +338,6 @@ def test_hist_profit_rate_fallback_for_new_eid():
     loader.get_daily_data.return_value = pd.DataFrame(
         columns=["SCENARIOID", "EID", "DATETIME", "PEAKID"]
     )
-    # Historical data: only EID 1, 100% win rate → global avg = 1.0
     loader.get_all_triplets.return_value = pd.DataFrame(
         {"EID": [1], "MONTH": ["2020-06"], "PEAKID": [0]}
     )
@@ -362,10 +355,10 @@ def test_hist_profit_rate_fallback_for_new_eid():
     triplets = pd.DataFrame({"EID": [99], "MONTH": [TARGET_MONTH], "PEAKID": [0]})
     result = build_feature_matrix(loader, triplets, CUTOFF_DATE)
 
-    assert result["hist_profit_rate"].iloc[0] == pytest.approx(1.0)
+    assert result["hist_win_rate"].iloc[0] == pytest.approx(1.0)
 
 
-# ── Test 8: cost_proxy uses month M ──────────────────────────────────────────
+# ── Test 7: cost_proxy uses month M ──────────────────────────────────────────
 
 
 def test_cost_proxy_uses_month_m_cost():
@@ -382,7 +375,6 @@ def test_cost_proxy_uses_month_m_cost():
     )
 
     def _price_cost_profit_side_effect(filterdf):
-        # cost_proxy_m call: filterdf has MONTH = M → return C = 7.5 for EID 1
         if (filterdf["MONTH"] == CUTOFF_MONTH).all():
             return pd.DataFrame(
                 {"EID": [1], "MONTH": [CUTOFF_MONTH], "PEAKID": [0],
@@ -413,12 +405,10 @@ def test_cost_proxy_fallback_to_hist_median_when_m_absent():
 
     def _side_effect(filterdf):
         if (filterdf["MONTH"] == CUTOFF_MONTH).all():
-            # C_M = 0 → absent from parquet (sparsified)
             return pd.DataFrame(
                 {"EID": [1], "MONTH": [CUTOFF_MONTH], "PEAKID": [0],
                  "PRICE": [0.0], "COST": [0.0], "PROFIT": [0.0]}
             )
-        # Historical: median COST = 4.0
         return pd.DataFrame(
             {"EID": [1], "MONTH": ["2020-06"], "PEAKID": [0],
              "PRICE": [10.0], "COST": [4.0], "PROFIT": [6.0]}
@@ -432,7 +422,7 @@ def test_cost_proxy_fallback_to_hist_median_when_m_absent():
     assert result["cost_proxy"].iloc[0] == pytest.approx(4.0)
 
 
-# ── Test 9: impact_concentration range ───────────────────────────────────────
+# ── Test 8: impact_concentration range ───────────────────────────────────────
 
 
 def test_impact_concentration_in_unit_interval():
@@ -454,7 +444,7 @@ def test_impact_concentration_one_source_dominates():
             "DATETIME": pd.Timestamp(f"{TARGET_MONTH}-15"),
             "PEAKID": 0,
             "m_ACTIVATIONLEVEL": 50.0, "m_PSM": 5.0,
-            "m_WINDIMPACT": 100.0,   # single dominant source
+            "m_WINDIMPACT": 100.0,
             "m_SOLARIMPACT": 0.0,
             "m_HYDROIMPACT": 0.0,
             "m_NONRENEWBALIMPACT": 0.0,
@@ -468,6 +458,37 @@ def test_impact_concentration_one_source_dominates():
     result = build_feature_matrix(loader, triplets, CUTOFF_DATE)
 
     assert result["impact_concentration"].iloc[0] == pytest.approx(1.0, abs=1e-6)
+
+
+# ── Test 9: V3 formula — |SUM(PSM)| per scenario ─────────────────────────────
+
+
+def test_sum_abs_psm_uses_abs_of_sum():
+    """
+    sum_abs_psm_s1 must equal |SUM(PSM)| per scenario, not mean(|PSM|).
+
+    With two PSM rows of +10 and -10 (cancel out), |SUM| = 0,
+    but mean(|PSM|) = 10. The V3 formula returns 0.
+    """
+    loader = _make_loader_no_data()
+    rows = [
+        {"SCENARIOID": 1, "EID": 1, "DATETIME": pd.Timestamp(f"{TARGET_MONTH}-01"),
+         "PEAKID": 0, "m_ACTIVATIONLEVEL": 50.0, "m_PSM": 10.0,
+         "m_WINDIMPACT": 0.0, "m_SOLARIMPACT": 0.0, "m_HYDROIMPACT": 0.0,
+         "m_NONRENEWBALIMPACT": 0.0, "m_EXTERNALIMPACT": 0.0,
+         "m_TRANSMISSIONOUTAGEIMPACT": 0.0, "m_LOADIMPACT": 0.0},
+        {"SCENARIOID": 1, "EID": 1, "DATETIME": pd.Timestamp(f"{TARGET_MONTH}-02"),
+         "PEAKID": 0, "m_ACTIVATIONLEVEL": 50.0, "m_PSM": -10.0,
+         "m_WINDIMPACT": 0.0, "m_SOLARIMPACT": 0.0, "m_HYDROIMPACT": 0.0,
+         "m_NONRENEWBALIMPACT": 0.0, "m_EXTERNALIMPACT": 0.0,
+         "m_TRANSMISSIONOUTAGEIMPACT": 0.0, "m_LOADIMPACT": 0.0},
+    ]
+    loader.get_monthly_data.return_value = pd.DataFrame(rows)
+    triplets = pd.DataFrame({"EID": [1], "MONTH": [TARGET_MONTH], "PEAKID": [0]})
+    result = build_feature_matrix(loader, triplets, CUTOFF_DATE)
+
+    # V3: |SUM(+10, -10)| = 0
+    assert result["sum_abs_psm_s1"].iloc[0] == pytest.approx(0.0, abs=1e-9)
 
 
 # ── Test 10: reproducibility ──────────────────────────────────────────────────

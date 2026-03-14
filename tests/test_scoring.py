@@ -7,7 +7,12 @@ import pytest
 from unittest.mock import MagicMock
 
 import numpy as np
-from datachallenge.scoring import score_by_activation_level, score_by_historical_profit_rate, score_by_lasso
+from datachallenge.scoring import (
+    score_by_activation_level,
+    score_by_historical_profit_rate,
+    score_by_lasso,
+    score_by_lightgbm,
+)
 
 TARGET_MONTH = "2020-08"
 CUTOFF_DATE = "2020-07-07"
@@ -279,18 +284,7 @@ def test_hist_score_in_unit_interval():
 # score_by_lasso — helpers
 # ---------------------------------------------------------------------------
 
-FEATURE_COLUMNS_FOR_TEST = [
-    "m_ACT_mean", "m_ACT_max", "m_PSM_mean", "m_PSM_min", "m_PSM_std",
-    "n_hours_active", "mean_wind", "mean_solar", "mean_hydro", "mean_nonrenew",
-    "mean_external", "mean_transmission_outage", "m_LOADIMPACT_mean",
-    "sum_abs_psm_s1", "sum_abs_psm_s2", "sum_abs_psm_s3",
-    "d_ACT_mean", "daily_sum_abs_psd", "daily_n_hours_active",
-    "daily_mean_trans_outage", "act_psm_interaction", "mean_sum_abs_psm",
-    "psm_std_scenarios", "estimated_profit", "estimated_profit_pessimistic",
-    "all_scenarios_profitable", "confidence_adjusted_profit",
-    "profit_per_active_hour", "impact_concentration", "cost_proxy",
-    "hist_profit_rate", "month_sin", "month_cos",
-]
+from datachallenge.features import FEATURE_COLUMNS as FEATURE_COLUMNS_FOR_TEST
 
 
 def _make_feature_df(loader, triplets_df, cutoff_date):
@@ -404,6 +398,130 @@ def test_lasso_excludes_cutoff_month_from_training():
         'datachallenge.scoring.build_feature_matrix', side_effect=_make_feature_df
     ):
         score_by_lasso(loader, candidates, CUTOFF_DATE)
+
+    call_args = loader.get_price_cost_profit.call_args
+    passed_filterdf = call_args[0][0]
+    assert (passed_filterdf['MONTH'] < CUTOFF_MONTH).all(), (
+        "Month M was included in the filterdf passed to get_price_cost_profit — anti-leak violation"
+    )
+
+
+# ---------------------------------------------------------------------------
+# score_by_lightgbm — tests
+# ---------------------------------------------------------------------------
+
+
+def test_lightgbm_output_columns():
+    """Output must have exactly EID, MONTH, PEAKID, PREDICTED_PROFIT."""
+    loader = _setup_lasso_loader(
+        ['2020-01', '2020-02', '2020-03', '2020-04', '2020-05', '2020-06'],
+        list(range(1, 11)), list(range(1, 11))
+    )
+    candidates = _make_candidates(5)
+
+    with __import__('unittest.mock', fromlist=['patch']).patch(
+        'datachallenge.scoring.build_feature_matrix', side_effect=_make_feature_df
+    ):
+        result = score_by_lightgbm(loader, candidates, CUTOFF_DATE)
+
+    assert set(result.columns) == {'EID', 'MONTH', 'PEAKID', 'PREDICTED_PROFIT'}
+
+
+def test_lightgbm_all_candidates_returned():
+    """Every candidate triplet must appear in the output (no rows dropped)."""
+    loader = _setup_lasso_loader(
+        ['2020-01', '2020-02', '2020-03', '2020-04', '2020-05', '2020-06'],
+        list(range(1, 11)), list(range(1, 6))
+    )
+    candidates = _make_candidates(5)
+
+    with __import__('unittest.mock', fromlist=['patch']).patch(
+        'datachallenge.scoring.build_feature_matrix', side_effect=_make_feature_df
+    ):
+        result = score_by_lightgbm(loader, candidates, CUTOFF_DATE)
+
+    assert len(result) == len(candidates)
+    input_keys = set(zip(candidates['EID'], candidates['MONTH'], candidates['PEAKID']))
+    output_keys = set(zip(result['EID'], result['MONTH'], result['PEAKID']))
+    assert input_keys == output_keys
+
+
+def test_lightgbm_no_history_returns_zero():
+    """When there is no history before cutoff_month, all candidates get score 0."""
+    loader = MagicMock()
+    loader.get_all_triplets.return_value = _make_triplets([1, 2], [CUTOFF_MONTH])
+    candidates = _make_candidates(2)
+
+    result = score_by_lightgbm(loader, candidates, CUTOFF_DATE)
+
+    assert (result['PREDICTED_PROFIT'] == 0.0).all()
+
+
+def test_lightgbm_no_profit_data_returns_zero():
+    """When get_price_cost_profit returns empty, all candidates get score 0."""
+    loader = MagicMock()
+    loader.get_all_triplets.return_value = _make_triplets([1, 2], ['2020-05', '2020-06'])
+    loader.get_price_cost_profit.return_value = pd.DataFrame()
+    candidates = _make_candidates(2)
+
+    result = score_by_lightgbm(loader, candidates, CUTOFF_DATE)
+
+    assert (result['PREDICTED_PROFIT'] == 0.0).all()
+
+
+def test_lightgbm_few_training_rows_returns_zero():
+    """When fewer than min_child_samples training rows, all candidates get score 0."""
+    loader = MagicMock()
+    # Only 2 triplets in history (< 100 min_child_samples)
+    loader.get_all_triplets.return_value = _make_triplets([1], ['2020-06'])
+    loader.get_price_cost_profit.return_value = _make_profit_df([1], ['2020-06'])
+    candidates = _make_candidates(2)
+
+    result = score_by_lightgbm(loader, candidates, CUTOFF_DATE)
+
+    assert (result['PREDICTED_PROFIT'] == 0.0).all()
+
+
+def test_lightgbm_score_in_unit_interval():
+    """PREDICTED_PROFIT must be in [0.0, 1.0] (it's predict_proba output)."""
+    # Need enough rows to exceed min_child_samples=100
+    many_eids = list(range(1, 60))  # 60 EIDs × 2 PEAKIDs × 1 month = 120 rows
+    loader = _setup_lasso_loader(
+        ['2020-06'], many_eids, list(range(1, 6)), profit_val=5.0
+    )
+    # Mix profitable and non-profitable
+    profit_df = loader.get_price_cost_profit.return_value.copy()
+    profit_df.loc[profit_df.index[:len(profit_df) // 2], 'PROFIT'] = -1.0
+    loader.get_price_cost_profit.return_value = profit_df
+    candidates = _make_candidates(5)
+
+    with __import__('unittest.mock', fromlist=['patch']).patch(
+        'datachallenge.scoring.build_feature_matrix', side_effect=_make_feature_df
+    ):
+        result = score_by_lightgbm(loader, candidates, CUTOFF_DATE)
+
+    assert (result['PREDICTED_PROFIT'] >= 0.0).all()
+    assert (result['PREDICTED_PROFIT'] <= 1.0).all()
+
+
+def test_lightgbm_excludes_cutoff_month_from_training():
+    """get_price_cost_profit must not be called with month M triplets (anti-leak)."""
+    loader = MagicMock()
+    loader.get_all_triplets.return_value = pd.DataFrame({
+        'EID': [1, 1],
+        'MONTH': [CUTOFF_MONTH, '2020-06'],
+        'PEAKID': [0, 0],
+    })
+    loader.get_price_cost_profit.return_value = pd.DataFrame({
+        'EID': [1], 'MONTH': ['2020-06'], 'PEAKID': [0],
+        'PRICE': [10.0], 'COST': [5.0], 'PROFIT': [5.0],
+    })
+    candidates = _make_candidates(1)
+
+    with __import__('unittest.mock', fromlist=['patch']).patch(
+        'datachallenge.scoring.build_feature_matrix', side_effect=_make_feature_df
+    ):
+        score_by_lightgbm(loader, candidates, CUTOFF_DATE)
 
     call_args = loader.get_price_cost_profit.call_args
     passed_filterdf = call_args[0][0]

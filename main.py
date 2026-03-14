@@ -4,7 +4,7 @@ import pandas as pd
 from datachallenge.loader import CustomDataLoader
 from datachallenge.config import settings
 from datachallenge.logger import logger
-from datachallenge.scoring import score_by_activation_level, score_by_historical_profit_rate, score_by_lasso, score_by_maxime_short
+from datachallenge.scoring import score_by_activation_level, score_by_historical_profit_rate, score_by_lasso, score_by_lightgbm, score_by_maxime_short
 from datachallenge.selection import select_opportunities
 from datachallenge.output import write_opportunities
 from datachallenge.candidates import build_candidate_pool
@@ -15,6 +15,7 @@ SCORER_REGISTRY = {
     'historical_profit_rate': score_by_historical_profit_rate,
     'maxime_short': score_by_maxime_short,
     'lasso': score_by_lasso,
+    'lightgbm': score_by_lightgbm,
 }
 SELECTOR_REGISTRY = {
     'default': select_opportunities,

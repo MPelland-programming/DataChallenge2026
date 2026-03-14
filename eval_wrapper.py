@@ -180,6 +180,7 @@ def write_results(scorer: str, selector: str, start: str, end: str, metrics: dic
         "selector": selector,
         "start_month": start,
         "end_month": end,
+        "universe": "sim",
         **metrics,
     }
 

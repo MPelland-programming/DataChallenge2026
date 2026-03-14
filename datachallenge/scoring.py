@@ -12,6 +12,7 @@ from typing import Protocol
 
 import numpy as np
 import pandas as pd
+from lightgbm import LGBMClassifier
 from sklearn.linear_model import LassoCV, LogisticRegression, Ridge
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
@@ -370,5 +371,110 @@ def score_by_lasso(
 
     X_cand = scaler.transform(result[FEATURE_COLUMNS].fillna(0.0).values)
     result["PREDICTED_PROFIT"] = lasso.predict(X_cand)
+
+    return result[["EID", "MONTH", "PEAKID", "PREDICTED_PROFIT"]]
+
+
+def score_by_lightgbm(
+    loader: CustomDataLoader,
+    candidates: pd.DataFrame,
+    cutoff_date: str,
+) -> pd.DataFrame:
+    """
+    LightGBM classifier scorer with walk-forward training.
+
+    Trains a gradient boosting classifier on historical (EID, MONTH, PEAKID)
+    triplets with MONTH strictly before the cutoff month M.  The binary label
+    is (PROFIT > 0) and the predicted probability of profit is used as the
+    ranking score (PREDICTED_PROFIT).
+
+    LightGBM is preferred over Lasso for the 170k-candidate sim universe:
+    it trains in seconds on large datasets (histogram-based splits), handles
+    non-linear feature interactions automatically, and requires no StandardScaler.
+
+    Walk-forward design and embargo rule are identical to other scorers:
+    - Training data: all historical triplets with MONTH < cutoff_month.
+    - No data from month M or M+1 is used in training or feature extraction.
+
+    Fallback: if fewer than min_child_samples (100) training rows are available,
+    all candidates receive PREDICTED_PROFIT = 0.0 (not enough data to fit).
+
+    Args:
+        loader:       Initialised CustomDataLoader.
+        candidates:   DataFrame with columns EID, MONTH, PEAKID.
+        cutoff_date:  'YYYY-MM-DD', the 7th of month M.
+
+    Returns:
+        DataFrame with columns EID, MONTH, PEAKID, PREDICTED_PROFIT.
+        PREDICTED_PROFIT = predict_proba[:, 1] (probability of being profitable).
+    """
+    MIN_CHILD_SAMPLES = 100
+    cutoff_month = cutoff_date[:7]  # 'YYYY-MM'
+
+    # ── 1. Gather training triplets (MONTH < M) ───────────────────────────────
+    all_triplets = loader.get_all_triplets(cutoff_date)
+    train_triplets = all_triplets[all_triplets["MONTH"] < cutoff_month].copy()
+
+    result_empty = candidates[["EID", "MONTH", "PEAKID"]].copy()
+    result_empty["PREDICTED_PROFIT"] = 0.0
+
+    if train_triplets.empty:
+        return result_empty
+
+    # ── 2. Labels for training triplets ──────────────────────────────────────
+    profit_df = loader.get_price_cost_profit(train_triplets)
+    if profit_df.empty:
+        return result_empty
+
+    profit_df = profit_df[["EID", "MONTH", "PEAKID", "PROFIT"]].drop_duplicates(
+        subset=["EID", "MONTH", "PEAKID"]
+    )
+
+    # ── 3. Build feature matrix for training triplets ─────────────────────────
+    train_features = build_feature_matrix(loader, train_triplets, cutoff_date)
+
+    train_df = train_features.merge(
+        profit_df, on=["EID", "MONTH", "PEAKID"], how="inner"
+    )
+    if train_df.empty or train_df["PROFIT"].isna().all():
+        return result_empty
+
+    if len(train_df) < MIN_CHILD_SAMPLES:
+        return result_empty
+
+    X_train = train_df[FEATURE_COLUMNS].values
+    y_class = (train_df["PROFIT"].values > 0).astype(int)
+
+    # Need at least 2 classes to train a classifier
+    if len(np.unique(y_class)) < 2:
+        return result_empty
+
+    # ── 4. Train LightGBM classifier ──────────────────────────────────────────
+    # Hyperparams from coworkers (optimised for this dataset).
+    # No StandardScaler needed — tree splits are rank-based.
+    model = LGBMClassifier(
+        n_estimators=200,
+        max_depth=4,
+        learning_rate=0.05,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        min_child_samples=MIN_CHILD_SAMPLES,
+        reg_alpha=2.0,
+        reg_lambda=2.0,
+        random_state=42,
+        verbose=-1,
+    )
+    model.fit(X_train, y_class)
+
+    # ── 5. Build feature matrix for candidates and predict ────────────────────
+    cand_features = build_feature_matrix(loader, candidates, cutoff_date)
+    result = candidates[["EID", "MONTH", "PEAKID"]].merge(
+        cand_features[["EID", "MONTH", "PEAKID"] + FEATURE_COLUMNS],
+        on=["EID", "MONTH", "PEAKID"],
+        how="left",
+    )
+
+    X_cand = result[FEATURE_COLUMNS].fillna(0.0).values
+    result["PREDICTED_PROFIT"] = model.predict_proba(X_cand)[:, 1]
 
     return result[["EID", "MONTH", "PEAKID", "PREDICTED_PROFIT"]]
