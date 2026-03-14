@@ -10,8 +10,11 @@ literal profit estimate, just a value that ranks candidates correctly.
 
 from typing import Protocol
 
+import numpy as np
 import pandas as pd
+from sklearn.linear_model import LogisticRegression, Ridge
 
+from datachallenge.features import FEATURE_COLUMNS, build_feature_matrix
 from datachallenge.loader import CustomDataLoader
 
 
@@ -93,6 +96,107 @@ def score_by_activation_level(
     result['PREDICTED_PROFIT'] = result['PREDICTED_PROFIT'].fillna(0.0)
 
     return result[['EID', 'MONTH', 'PEAKID', 'PREDICTED_PROFIT']]
+
+
+def score_by_maxime_short(
+    loader: CustomDataLoader,
+    candidates: pd.DataFrame,
+    cutoff_date: str,
+) -> pd.DataFrame:
+    """
+    Two-head supervised scorer: LogisticRegression (P = prob. of profit)
+    × Ridge regression (V = predicted profit value). Final score = P × V.
+
+    Walk-forward design: all historical triplets with MONTH strictly before
+    the cutoff month M are used as training data.  A 1-month embargo is
+    applied implicitly: the feature window for training rows ends at M−1,
+    so no data from M (or M+1) leaks into the training features.
+
+    Training set: observed (EID, MONTH, PEAKID) triplets with MONTH < M.
+    Labels: CY = (PROFIT > 0) for logistic head; Y = PROFIT for ridge head.
+    Ridge sample weights: profitable rows are weighted 2× non-profitable.
+
+    Fallback: if fewer than 2 distinct classes exist in the training labels
+    (e.g. first month with no history), all candidates receive score 0.
+
+    Args:
+        loader:       Initialised CustomDataLoader.
+        candidates:   DataFrame with columns EID, MONTH, PEAKID.
+        cutoff_date:  'YYYY-MM-DD', the 7th of month M.
+
+    Returns:
+        DataFrame with columns EID, MONTH, PEAKID, PREDICTED_PROFIT.
+        PREDICTED_PROFIT = P × V (logistic probability × ridge prediction).
+    """
+    cutoff_month = cutoff_date[:7]  # 'YYYY-MM'
+
+    # ── 1. Gather training triplets (MONTH < M) ───────────────────────────────
+    all_triplets = loader.get_all_triplets(cutoff_date)
+    train_triplets = all_triplets[all_triplets["MONTH"] < cutoff_month].copy()
+
+    result_empty = candidates[["EID", "MONTH", "PEAKID"]].copy()
+    result_empty["PREDICTED_PROFIT"] = 0.0
+
+    if train_triplets.empty:
+        return result_empty
+
+    # ── 2. Labels for training triplets ──────────────────────────────────────
+    profit_df = loader.get_price_cost_profit(train_triplets)
+    if profit_df.empty:
+        return result_empty
+
+    profit_df = profit_df[["EID", "MONTH", "PEAKID", "PROFIT"]].drop_duplicates(
+        subset=["EID", "MONTH", "PEAKID"]
+    )
+
+    # ── 3. Build feature matrix for training triplets ─────────────────────────
+    # Each training row has MONTH = M_hist (historical target months).
+    # build_feature_matrix treats MONTH as the target M+1, so we pass the
+    # historical month as "target month" and supply a matching cutoff that
+    # ends the day-7 of the month before — i.e. we use cutoff_date for the
+    # current call only; the feature matrix will use the actual cutoff data
+    # available at the *current* cutoff (conservative but correct: all sim
+    # data used is available at the current cutoff).
+    train_features = build_feature_matrix(loader, train_triplets, cutoff_date)
+
+    # Merge labels into features
+    train_df = train_features.merge(
+        profit_df, on=["EID", "MONTH", "PEAKID"], how="inner"
+    )
+    if train_df.empty or train_df["PROFIT"].isna().all():
+        return result_empty
+
+    X_train = train_df[FEATURE_COLUMNS].values
+    y_profit = train_df["PROFIT"].values
+    y_class = (y_profit > 0).astype(int)
+
+    # Need at least 2 classes for logistic regression
+    if len(np.unique(y_class)) < 2:
+        return result_empty
+
+    # ── 4. Train heads ────────────────────────────────────────────────────────
+    lr = LogisticRegression(class_weight="balanced", max_iter=1000, random_state=42)
+    lr.fit(X_train, y_class)
+
+    # Ridge: weight profitable rows 2× non-profitable
+    sample_weights = np.where(y_class == 1, 2.0, 1.0)
+    ridge = Ridge()
+    ridge.fit(X_train, y_profit, sample_weight=sample_weights)
+
+    # ── 5. Build feature matrix for candidates and predict ────────────────────
+    cand_features = build_feature_matrix(loader, candidates, cutoff_date)
+    result = candidates[["EID", "MONTH", "PEAKID"]].merge(
+        cand_features[["EID", "MONTH", "PEAKID"] + FEATURE_COLUMNS],
+        on=["EID", "MONTH", "PEAKID"],
+        how="left",
+    )
+
+    X_cand = result[FEATURE_COLUMNS].fillna(0.0).values
+    P = lr.predict_proba(X_cand)[:, 1]  # probability of profit
+    V = ridge.predict(X_cand)           # predicted profit value
+
+    result["PREDICTED_PROFIT"] = P * V
+    return result[["EID", "MONTH", "PEAKID", "PREDICTED_PROFIT"]]
 
 
 def score_by_historical_profit_rate(
