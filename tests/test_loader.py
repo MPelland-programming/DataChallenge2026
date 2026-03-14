@@ -1,7 +1,8 @@
 import pandas as pd
 import pytest
 
-from datachallenge.loader import select_best_predict_and_print
+from datachallenge.selection import select_opportunities
+from datachallenge.output import write_opportunities
 
 # Fixed reference date used across all tests. Mid-2020 was chosen because the git
 # history references July 2020 data, so it is safe to assume rows exist there.
@@ -60,33 +61,24 @@ def test_get_daily_data_cutoff(loader):
     assert max_dt <= cutoff_ts, f"Daily sim data contains rows past cutoff: {max_dt}"
 
 
-def test_select_best_predict_and_print(loader, tmp_path, monkeypatch):
+def test_select_and_write_opportunities(loader, tmp_path):
     triplets = loader.get_all_triplets(CUTOFF_DATE)
 
     # Use real triplets so the input is realistic, but attach synthetic
-    # PREDICTED_PROFIT = 1, 2, 3, ... The function only cares about ranking,
+    # PREDICTED_PROFIT = 1, 2, 3, ... The pipeline only cares about ranking,
     # not the actual values, so this is sufficient and fully deterministic.
     resultdf = triplets.copy()
     resultdf["PREDICTED_PROFIT"] = range(1, len(resultdf) + 1)
 
-    # The function writes opportunities.csv to the current working directory
-    # (hardcoded). monkeypatch.chdir redirects that write into tmp_path, a
-    # pytest built-in that provides a fresh temporary directory per test, so
-    # the project root is never polluted and the test is self-cleaning.
-    monkeypatch.chdir(tmp_path)
-    select_best_predict_and_print(resultdf, min_opp=10, max_opp=100)
+    selected = select_opportunities(resultdf, min_opp=10, max_opp=100)
+    out_path = str(tmp_path / "opportunities.csv")
+    write_opportunities(selected, out_path)
 
-    out = tmp_path / "opportunities.csv"
-    assert out.exists(), "opportunities.csv was not written"
-
-    written = pd.read_csv(out)
-    # Row count must respect the [min_opp, max_opp] contract defined by the
-    # function signature. Violating either bound means the selection logic is
-    # broken regardless of prediction quality.
+    written = pd.read_csv(out_path)
+    # Row count must respect the [min_opp, max_opp] contract.
     assert 10 <= len(written) <= 100, f"Output has {len(written)} rows, expected 10–100"
 
     # Output columns must be exactly TARGET_MONTH, PEAK_TYPE, EID — in that order.
-    # This is the contract expected by downstream consumers of opportunities.csv.
     assert list(written.columns) == ["TARGET_MONTH", "PEAK_TYPE", "EID"]
 
     # PEAK_TYPE must only contain "ON" or "OFF" — never raw PEAKID integers.

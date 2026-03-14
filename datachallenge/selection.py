@@ -1,79 +1,70 @@
 """
-FTR Opportunity Selection Models
-=================================
-Each function in this module takes a CustomDataLoader, a candidate DataFrame
-(columns: EID, MONTH, PEAKID — for the target month M+1), and a cutoff_date,
-and returns a scored DataFrame with columns:
-
-    EID, MONTH, PEAKID, PREDICTED_PROFIT
-
-The PREDICTED_PROFIT column is used as a ranking score by
-`select_best_predict_and_print()` in loader.py — it does NOT need to be a
-true profit estimate; it only needs to rank candidates correctly.
-
-Usage in main.py (inside the per-month loop):
-    from datachallenge.selection import score_by_activation_level
-    scored = score_by_activation_level(loader, candidates, cutoff_date)
-    select_best_predict_and_print(scored)
+FTR Opportunity Selection
+=========================
+select_opportunities() enforces the 10–100 constraint and returns a filtered
+DataFrame ready for write_opportunities() in output.py.
 """
 
+from typing import Protocol
+
 import pandas as pd
-from datachallenge.loader import CustomDataLoader
 
 
-def score_by_activation_level(
-    loader: CustomDataLoader,
-    candidates: pd.DataFrame,
-    cutoff_date: str,
+class SelectorProtocol(Protocol):
+    """Type-checkable interface for selection functions."""
+
+    def __call__(
+        self,
+        scored_df: pd.DataFrame,
+        min_opp: int = 10,
+        max_opp: int = 100,
+    ) -> pd.DataFrame:
+        """
+        Select opportunities from a scored DataFrame.
+
+        Args:
+            scored_df:  DataFrame with columns EID, MONTH, PEAKID, PREDICTED_PROFIT.
+            min_opp:    Minimum number of opportunities to select.
+            max_opp:    Maximum number of opportunities to select.
+
+        Returns:
+            DataFrame with columns EID, MONTH, PEAKID (no PREDICTED_PROFIT).
+        """
+        ...
+
+
+def select_opportunities(
+    scored_df: pd.DataFrame,
+    min_opp: int = 10,
+    max_opp: int = 100,
 ) -> pd.DataFrame:
     """
-    Baseline selector: rank candidates by mean ACTIVATIONLEVEL in monthly sims.
+    Apply the 10–100 selection constraint and return the selected opportunities.
 
-    ACTIVATIONLEVEL represents the intensity of network constraint activation (%)
-    for a given element and hour. Higher values indicate stronger expected price
-    differentials, which correlates with higher realized prices (PR).
-    Confirmed by team analysis to be a strong predictor of profitability.
+    Deduplicates by averaging PREDICTED_PROFIT per (EID, MONTH, PEAKID) when
+    duplicates are present, then sorts descending. Selects the top n_profitable
+    rows (those with PREDICTED_PROFIT > 0), clamped to [min_opp, max_opp].
 
-    The score is computed as the mean of m_ACTIVATIONLEVEL across:
-      - all 3 SCENARIOID values
-      - all hours of the target month M+1
-
-    Triplets absent from the monthly sims (implicit zero) receive score 0.
+    Does not write to disk — pass the result to write_opportunities() in output.py.
 
     Args:
-        loader:       Initialised CustomDataLoader instance.
-        candidates:   DataFrame with columns MONTH, PEAKID, EID.
-                      All rows should be for the same target month M+1.
-        cutoff_date:  'YYYY-MM-DD', the 7th of month M (not used for monthly sims,
-                      included for interface consistency).
+        scored_df:  DataFrame with columns EID, MONTH, PEAKID, PREDICTED_PROFIT.
+        min_opp:    Minimum number of opportunities (default 10).
+        max_opp:    Maximum number of opportunities (default 100).
 
     Returns:
-        DataFrame with columns EID, MONTH, PEAKID, PREDICTED_PROFIT.
-        PREDICTED_PROFIT = mean m_ACTIVATIONLEVEL (used as a ranking score).
+        DataFrame with columns EID, MONTH, PEAKID.
     """
-    monthly_sim = loader.get_monthly_data(candidates)
+    deduped = scored_df.groupby(['EID', 'MONTH', 'PEAKID'], as_index=False)['PREDICTED_PROFIT'].mean()
+    sorted_df = deduped.sort_values('PREDICTED_PROFIT', ascending=False)
 
-    if monthly_sim.empty:
-        result = candidates[['EID', 'MONTH', 'PEAKID']].copy()
-        result['PREDICTED_PROFIT'] = 0.0
-        return result
+    n_profitable = int((sorted_df['PREDICTED_PROFIT'] > 0).sum())
 
-    # Derive MONTH from DATETIME so we can group per triplet
-    monthly_sim = monthly_sim.copy()
-    monthly_sim['MONTH'] = pd.to_datetime(monthly_sim['DATETIME']).dt.to_period('M').astype(str)
+    if n_profitable < min_opp:
+        selected = sorted_df.head(min_opp)
+    elif n_profitable <= max_opp:
+        selected = sorted_df.head(n_profitable)
+    else:
+        selected = sorted_df.head(max_opp)
 
-    # Mean ACTIVATIONLEVEL per (EID, MONTH, PEAKID) across all scenarios and hours
-    scored = (
-        monthly_sim
-        .groupby(['EID', 'MONTH', 'PEAKID'], as_index=False)['m_ACTIVATIONLEVEL']
-        .mean()
-        .rename(columns={'m_ACTIVATIONLEVEL': 'PREDICTED_PROFIT'})
-    )
-
-    # Left-join so candidates with no sim data get score 0
-    result = candidates[['EID', 'MONTH', 'PEAKID']].merge(
-        scored, on=['EID', 'MONTH', 'PEAKID'], how='left'
-    )
-    result['PREDICTED_PROFIT'] = result['PREDICTED_PROFIT'].fillna(0.0)
-
-    return result[['EID', 'MONTH', 'PEAKID', 'PREDICTED_PROFIT']]
+    return selected[['EID', 'MONTH', 'PEAKID']].reset_index(drop=True)

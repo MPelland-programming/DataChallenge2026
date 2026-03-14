@@ -1,79 +1,78 @@
 import pandas as pd
-import pytest
 
-from datachallenge.selection import score_by_activation_level
-
-CUTOFF_DATE = "2020-07-07"
-TARGET_MONTH = "2020-08"  # M+1 when cutoff is 2020-07-07
+from datachallenge.selection import select_opportunities
 
 
-def _make_candidates(eids, target_month=TARGET_MONTH):
+def _make_scored(n_positive, n_negative=0):
+    """Build a scored DataFrame with n_positive profitable and n_negative unprofitable rows."""
+    eids = list(range(n_positive + n_negative))
+    profits = [float(i + 1) for i in range(n_positive)] + [-1.0] * n_negative
     return pd.DataFrame({
-        "EID": list(eids) * 2,
-        "MONTH": [target_month] * len(eids) * 2,
-        "PEAKID": [0] * len(eids) + [1] * len(eids),
+        'EID': eids,
+        'MONTH': ['2020-08'] * len(eids),
+        'PEAKID': [0] * len(eids),
+        'PREDICTED_PROFIT': profits,
     })
 
 
-def test_score_output_columns(loader):
-    """Result must have exactly EID, MONTH, PEAKID, PREDICTED_PROFIT."""
-    triplets = loader.get_all_triplets(CUTOFF_DATE)
-    candidates = _make_candidates(triplets["EID"].unique()[:10])
-
-    result = score_by_activation_level(loader, candidates, CUTOFF_DATE)
-
-    assert set(result.columns) == {"EID", "MONTH", "PEAKID", "PREDICTED_PROFIT"}
+def test_select_output_columns():
+    """Output must have exactly EID, MONTH, PEAKID — no PREDICTED_PROFIT."""
+    scored = _make_scored(20)
+    result = select_opportunities(scored)
+    assert set(result.columns) == {'EID', 'MONTH', 'PEAKID'}
 
 
-def test_score_all_candidates_returned(loader):
-    """Every candidate triplet must appear in the output (no silent drops)."""
-    triplets = loader.get_all_triplets(CUTOFF_DATE)
-    sample_eids = triplets["EID"].unique()[:20]
-    candidates = _make_candidates(sample_eids)
-
-    result = score_by_activation_level(loader, candidates, CUTOFF_DATE)
-
-    # Same number of rows as input
-    assert len(result) == len(candidates)
-
-    # All (EID, MONTH, PEAKID) keys present
-    input_keys = set(zip(candidates["EID"], candidates["MONTH"], candidates["PEAKID"]))
-    output_keys = set(zip(result["EID"], result["MONTH"], result["PEAKID"]))
-    assert input_keys == output_keys
+def test_select_fewer_than_min_pads_to_min():
+    """When fewer than min_opp rows are profitable, pad to min_opp (top by score)."""
+    scored = _make_scored(n_positive=5, n_negative=10)
+    result = select_opportunities(scored, min_opp=10, max_opp=100)
+    assert len(result) == 10
 
 
-def test_score_nonnegative(loader):
-    """ACTIVATIONLEVEL is a percentage, so mean must be >= 0.
-
-    Absent triplets default to 0 (never negative).
-    """
-    triplets = loader.get_all_triplets(CUTOFF_DATE)
-    candidates = _make_candidates(triplets["EID"].unique()[:20])
-
-    result = score_by_activation_level(loader, candidates, CUTOFF_DATE)
-
-    assert (result["PREDICTED_PROFIT"] >= 0).all(), (
-        f"Negative scores found:\n{result[result['PREDICTED_PROFIT'] < 0]}"
-    )
+def test_select_between_min_and_max_keeps_profitable():
+    """When profitable count is in [min_opp, max_opp], keep exactly that many."""
+    scored = _make_scored(n_positive=50)
+    result = select_opportunities(scored, min_opp=10, max_opp=100)
+    assert len(result) == 50
 
 
-def test_score_absent_triplets_get_zero(loader):
-    """EIDs that appear in history but have no monthly sim for M+1 get score 0.
+def test_select_more_than_max_caps_at_max():
+    """When more than max_opp rows are profitable, cap at max_opp."""
+    scored = _make_scored(n_positive=200)
+    result = select_opportunities(scored, min_opp=10, max_opp=100)
+    assert len(result) == 100
 
-    We fabricate a fake EID (int 0) that is very unlikely to exist in sims.
-    It must appear in the output with PREDICTED_PROFIT = 0.
-    """
-    fake_eid = 0
-    candidates = pd.DataFrame({
-        "EID": [fake_eid, fake_eid],
-        "MONTH": [TARGET_MONTH, TARGET_MONTH],
-        "PEAKID": [0, 1],
+
+def test_select_exactly_min():
+    """Exactly min_opp profitable rows → select exactly min_opp."""
+    scored = _make_scored(n_positive=10)
+    result = select_opportunities(scored, min_opp=10, max_opp=100)
+    assert len(result) == 10
+
+
+def test_select_exactly_max():
+    """Exactly max_opp profitable rows → select exactly max_opp."""
+    scored = _make_scored(n_positive=100)
+    result = select_opportunities(scored, min_opp=10, max_opp=100)
+    assert len(result) == 100
+
+
+def test_select_deduplicates_by_averaging():
+    """Duplicate triplets are deduplicated by averaging PREDICTED_PROFIT."""
+    scored = pd.DataFrame({
+        'EID': [1, 1],
+        'MONTH': ['2020-08', '2020-08'],
+        'PEAKID': [0, 0],
+        'PREDICTED_PROFIT': [10.0, 0.0],  # avg = 5.0 → still profitable
     })
+    result = select_opportunities(scored, min_opp=1, max_opp=10)
+    # After dedup there is 1 row; avg profit is 5.0 > 0
+    assert len(result) == 1
 
-    result = score_by_activation_level(loader, candidates, CUTOFF_DATE)
 
-    # EID 0 has no sim data → must default to 0
-    for peakid in [0, 1]:
-        row = result[(result["EID"] == fake_eid) & (result["PEAKID"] == peakid)]
-        assert len(row) == 1
-        assert row["PREDICTED_PROFIT"].iloc[0] == 0.0
+def test_select_sorted_descending():
+    """Top-scored candidates must appear first (descending order)."""
+    scored = _make_scored(n_positive=50)
+    result = select_opportunities(scored, min_opp=10, max_opp=20)
+    # All selected EIDs should be the top-20 by original score (EIDs 49..30)
+    assert len(result) == 20

@@ -4,7 +4,10 @@ import pandas as pd
 from datachallenge.loader import CustomDataLoader
 from datachallenge.config import settings
 from datachallenge.logger import logger
-from datachallenge.selection import score_by_activation_level
+from datachallenge.scoring import score_by_activation_level
+from datachallenge.selection import select_opportunities
+from datachallenge.output import write_opportunities
+from datachallenge.candidates import build_candidate_pool
 
 
 # Get input
@@ -86,7 +89,6 @@ msimfile = [os.path.join(DATA_ROOT, 'sim_monthly', f'sim_monthly_{y}.parquet')
 
 loader = CustomDataLoader(pricefile, costfile, dsimfile, msimfile)
 
-# --- Fix #2 & #3: month-by-month loop with cutoff logic ---
 # Generate list of target months M+1 between start and end
 target_months = pd.date_range(start, end, freq='MS')  # first day of each target month
 
@@ -100,50 +102,16 @@ for target_date in target_months:
 
     logger.info(f"[Target: {target_month}] Cutoff: {cutoff_date}")
 
-    # --- Build candidate filterdf for M+1 simulations ---
-    # Monthly sims for M+1 are available at cutoff
-    candidate_filter = pd.DataFrame({
-        'MONTH': [target_month],
-        'PEAKID': [0]
-    })
-    # We need both ON and OFF candidates — get all EIDs from monthly sims
-    # For now, use historical triplets visible at cutoff as candidate pool
-    historical = loader.get_all_triplets(cutoff_date)
-
-    # Get unique EIDs seen historically
-    known_eids = historical['EID'].unique()
-
-    # Build candidates: all known EIDs × {ON, OFF} for target_month
-    candidates = pd.DataFrame({
-        'EID': list(known_eids) * 2,
-        'MONTH': [target_month] * len(known_eids) * 2,
-        'PEAKID': [0] * len(known_eids) + [1] * len(known_eids),
-    })
-
-    # Score candidates by mean ACTIVATIONLEVEL in monthly sims for target_month
+    candidates = build_candidate_pool(loader, cutoff_date, target_month)
     scored = score_by_activation_level(loader, candidates, cutoff_date)
+    selected = select_opportunities(scored)
 
-    # Apply 10–100 selection constraint (mirrors select_best_predict_and_print logic)
-    scored_sorted = scored.sort_values('PREDICTED_PROFIT', ascending=False)
-    n_profitable = int((scored_sorted['PREDICTED_PROFIT'] > 0).sum())
-    if n_profitable < 10:
-        selected = scored_sorted.head(10)[['EID', 'MONTH', 'PEAKID']]
-    elif n_profitable <= 100:
-        selected = scored_sorted.head(n_profitable)[['EID', 'MONTH', 'PEAKID']]
-    else:
-        selected = scored_sorted.head(100)[['EID', 'MONTH', 'PEAKID']]
-
-    logger.info(f"[Target: {target_month}] Selected {len(selected)} opportunities "
-                f"({n_profitable} with positive ACTIVATIONLEVEL score)")
+    logger.info(f"[Target: {target_month}] Selected {len(selected)} opportunities")
     all_selections.append(selected)
 
-# --- Build output CSV
+# Build and write output CSV
 output = pd.concat(all_selections, ignore_index=True)
-output['PEAK_TYPE'] = output['PEAKID'].map({0: 'OFF', 1: 'ON'})
-output = output.rename(columns={'MONTH': 'TARGET_MONTH'})
-output = output[['TARGET_MONTH', 'PEAK_TYPE', 'EID']].drop_duplicates()
-
 project_root = os.path.dirname(os.path.abspath(__file__))
 output_path = os.path.join(project_root, 'opportunities.csv')
-output.to_csv(output_path, index=False)
+write_opportunities(output, output_path)
 logger.info(f"Output: {len(output)} rows saved to {output_path}")
