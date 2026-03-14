@@ -58,7 +58,7 @@ python main.py --start-month 2024-01 --end-month 2024-06 \
     --log-level DEBUG
 ```
 
-The script writes `opportunities.csv` inside the data folder specified by `DATA_ROOT`.
+The script writes `opportunities.csv` at the **project root** (same directory as `main.py`).
 
 ---
 
@@ -87,7 +87,26 @@ DataChallenge2026/
 
 ---
 
-## 7. Recommended Train / Validation Split
+## 7. Evaluating Your Output
+
+`evaluate.py` is the official scoring script provided by MAG Energy Solutions. It reads your `opportunities.csv` and computes the two quantitative axes of the grading rubric against the actual realized data.
+
+```bash
+python evaluate.py opportunities.csv --start-month 2020-01 --end-month 2023-12
+```
+
+It outputs:
+- **Axe 1 — F1-score** (precision, recall, F1 for ON-Peak and OFF-Peak separately, then averaged)
+- **Axe 2 — Net profit** (sum of `|PR| − C` over all selected opportunities)
+- A month-by-month breakdown (selections, TP, FP, profit per month)
+
+> **Note**: `evaluate.py` reads data directly from `./data/` relative to its own location and does not accept a `--data-root` override. Run it from the project root with data in `data/`.
+
+> **Do not modify** `evaluate.py` — it is read-only and provided by the organizers.
+
+---
+
+## 8. Recommended Train / Validation Split
 
 The provided dataset covers **2020–2023**. A 2024 out-of-sample set will be distributed later for robustness testing. Final scoring uses 2025 (never provided).
 
@@ -102,7 +121,7 @@ The anti-leakage cutoff is enforced automatically for every month — there is n
 
 ---
 
-## 8. Methodological Approach
+## 9. Methodological Approach
 
 > **TODO**: Describe the scoring/selection approach here once implemented.
 >
@@ -116,7 +135,7 @@ The anti-leakage cutoff is enforced automatically for every month — there is n
 
 ---
 
-## 9. Results and Analysis
+## 10. Results and Analysis
 
 > **TODO**: Fill in once the scoring algorithm is implemented and run on the validation set.
 >

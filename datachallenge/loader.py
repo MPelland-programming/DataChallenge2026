@@ -48,8 +48,7 @@ class CustomDataLoader:
             filterdf = self.get_all_triplets(cutoff_date)
 
         cost = duckdb.query(f"""
-            SELECT p.*EXCLUDE (C),
-            ABS(p.C) AS C
+            SELECT p.*
             FROM read_parquet('{self.costfile}') p
                 INNER JOIN filterdf f
                 ON  p.MONTH   = f.MONTH
@@ -58,8 +57,7 @@ class CustomDataLoader:
         """).to_df()
 
         dailyprice = duckdb.query(f"""
-            SELECT p.* EXCLUDE (PRICEREALIZED),
-            ABS(p.PRICEREALIZED) AS PRICEREALIZED
+            SELECT p.*
             FROM read_parquet('{self.pricefile}') p
                 INNER JOIN filterdf f
                 ON  strftime(p.DATETIME, '%Y-%m') = f.MONTH
@@ -67,7 +65,9 @@ class CustomDataLoader:
                 AND p.EID     = f.EID
         """).to_df()
         dailyprice['MONTH'] = pd.to_datetime(dailyprice['DATETIME']).dt.to_period('M').astype(str)
+        # Sum first, then abs — matches evaluate.py: abs(sum(PR)) - C
         price = dailyprice.groupby(['EID', 'MONTH', 'PEAKID'])["PRICEREALIZED"].sum().reset_index()
+        price["PRICEREALIZED"] = price["PRICEREALIZED"].abs()
 
         copri = pd.merge(cost, price, on=['EID', 'MONTH', 'PEAKID'], how='outer').fillna(0)
         copri = copri.rename(columns={'C': 'COST', 'PRICEREALIZED': 'PRICE'})
