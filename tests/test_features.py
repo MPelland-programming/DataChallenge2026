@@ -293,6 +293,26 @@ def test_no_nan_in_output():
     assert not result[FEATURE_COLUMNS].isnull().any().any()
 
 
+def test_feature_columns_are_numeric_when_daily_sim_empty():
+    """All feature columns must be numeric (float) even when daily sim is empty.
+
+    Regression test: left-joins with empty daily sim data previously left
+    columns like daily_sum_abs_psd and monthly_daily_ratio with object dtype,
+    causing LightGBM to raise ValueError('pandas dtypes must be int, float
+    or bool') at fit time.
+    """
+    loader = _make_loader_no_data()
+    # Monthly sim has data; daily sim is explicitly empty (sparse candidate)
+    loader.get_monthly_data.return_value = _make_monthly_sim_rows([1, 2], TARGET_MONTH)
+    result = build_feature_matrix(loader, _make_triplets(2), CUTOFF_DATE)
+
+    for col in FEATURE_COLUMNS:
+        assert pd.api.types.is_numeric_dtype(result[col]), (
+            f"Feature '{col}' has non-numeric dtype {result[col].dtype} — "
+            "object dtype breaks LightGBM fit"
+        )
+
+
 # ── Test 6: hist_win_rate in [0, 1] ──────────────────────────────────────────
 
 

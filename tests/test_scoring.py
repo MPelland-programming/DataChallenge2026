@@ -528,3 +528,35 @@ def test_lightgbm_excludes_cutoff_month_from_training():
     assert (passed_filterdf['MONTH'] < CUTOFF_MONTH).all(), (
         "Month M was included in the filterdf passed to get_price_cost_profit — anti-leak violation"
     )
+
+
+def test_lightgbm_no_feature_name_warning():
+    """score_by_lightgbm must not emit sklearn/LightGBM feature-name warnings.
+
+    Regression test: previously, fitting with a DataFrame and predicting with
+    a numpy array triggered: 'X does not have valid feature names, but
+    LGBMClassifier was fitted with feature names'. Fixed by passing DataFrames
+    to both fit and predict_proba.
+    """
+    import warnings
+
+    many_eids = list(range(1, 60))  # 120 rows > min_child_samples=100
+    loader = _setup_lasso_loader(['2020-06'], many_eids, list(range(1, 6)), profit_val=5.0)
+    profit_df = loader.get_price_cost_profit.return_value.copy()
+    profit_df.loc[profit_df.index[:len(profit_df) // 2], 'PROFIT'] = -1.0
+    loader.get_price_cost_profit.return_value = profit_df
+    candidates = _make_candidates(5)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with __import__('unittest.mock', fromlist=['patch']).patch(
+            'datachallenge.scoring.build_feature_matrix', side_effect=_make_feature_df
+        ):
+            score_by_lightgbm(loader, candidates, CUTOFF_DATE)
+
+    feature_name_warnings = [
+        w for w in caught if "feature names" in str(w.message).lower()
+    ]
+    assert len(feature_name_warnings) == 0, (
+        f"Unexpected feature name warning(s): {[str(w.message) for w in feature_name_warnings]}"
+    )
