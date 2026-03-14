@@ -157,12 +157,14 @@ def build_feature_matrix(
     # ── 8. hist_win_rate fallback for unseen EIDs ─────────────────────────────
     result["hist_win_rate"] = result["hist_win_rate"].fillna(global_win_rate)
 
-    # ── 9. Ensure all feature columns exist and fill NaN → 0 ─────────────────
+    # ── 9. Ensure all feature columns exist, fill NaN → 0, cast to float64 ─────
+    # Left-joins with sparse/empty sim data can leave columns with object dtype.
+    # LightGBM (and other sklearn estimators) require numeric dtypes; enforce here.
     for col in FEATURE_COLUMNS:
         if col not in result.columns:
             result[col] = 0.0
         else:
-            result[col] = result[col].fillna(0.0)
+            result[col] = pd.to_numeric(result[col], errors="coerce").fillna(0.0)
 
     return result[ALL_COLUMNS]
 
