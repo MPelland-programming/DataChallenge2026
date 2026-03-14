@@ -176,6 +176,11 @@ def score_by_maxime_short(
         return result_empty
 
     # ── 4. Scale features (fit on train only) ────────────────────────────────
+    # Features span very different scales: e.g. n_hours_active can be in the
+    # thousands while month_sin is in [-1, 1]. Without scaling, lbfgs fails
+    # to converge and Ridge coefficients are dominated by high-magnitude
+    # features. Scaler is fit on training data only — never on candidates —
+    # to avoid any look-ahead into the test distribution.
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train_raw)
 
