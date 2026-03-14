@@ -26,9 +26,10 @@ def test_get_price_cost_profit(loader):
     triplets = loader.get_all_triplets(CUTOFF_DATE)
     result = loader.get_price_cost_profit(filterdf=triplets)
 
-    # The loader applies ABS() to both raw columns. A negative cost or price
-    # here means the ABS() was dropped somewhere, which would silently corrupt
-    # the profit signal used for ranking.
+    # PRICE = abs(sum(hourly prices)) — matches evaluate.py which does abs(PR).
+    # COST = raw C from costs.parquet (no abs applied, matching evaluate.py).
+    # Both must be >= 0: PRICE by construction (abs of sum), COST because
+    # exposure costs are always non-negative in this dataset.
     assert (result["COST"] >= 0).all()
     assert (result["PRICE"] >= 0).all()
 
