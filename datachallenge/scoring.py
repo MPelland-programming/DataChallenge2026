@@ -12,7 +12,8 @@ from typing import Protocol
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.linear_model import LassoCV, LogisticRegression, Ridge
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 
 from datachallenge.features import FEATURE_COLUMNS, build_feature_matrix
@@ -278,3 +279,96 @@ def score_by_historical_profit_rate(
     result['PREDICTED_PROFIT'] = result['PREDICTED_PROFIT'].fillna(global_avg)
 
     return result[['EID', 'MONTH', 'PEAKID', 'PREDICTED_PROFIT']]
+
+
+def score_by_lasso(
+    loader: CustomDataLoader,
+    candidates: pd.DataFrame,
+    cutoff_date: str,
+) -> pd.DataFrame:
+    """
+    Lasso regression scorer with walk-forward alpha selection via LassoCV.
+
+    Predicts PROFIT directly (regression only). LassoCV uses TimeSeriesSplit
+    cross-validation to select the regularisation parameter alpha from the
+    training data available at each cutoff; alpha is re-selected at every
+    cutoff so the model adapts as more history becomes available.
+
+    Implicit feature selection: Lasso drives irrelevant feature coefficients
+    to zero, which is useful for jury presentation and interpretability.
+
+    Walk-forward design: all historical triplets with MONTH strictly before
+    the cutoff month M are used as training data.  Same anti-leak / embargo
+    rule as score_by_maxime_short.
+
+    Fallback: if there are fewer than 2 training rows, all candidates receive
+    score 0.
+
+    Args:
+        loader:       Initialised CustomDataLoader.
+        candidates:   DataFrame with columns EID, MONTH, PEAKID.
+        cutoff_date:  'YYYY-MM-DD', the 7th of month M.
+
+    Returns:
+        DataFrame with columns EID, MONTH, PEAKID, PREDICTED_PROFIT.
+        PREDICTED_PROFIT = lasso.predict(X_candidates).
+    """
+    cutoff_month = cutoff_date[:7]  # 'YYYY-MM'
+
+    # ── 1. Gather training triplets (MONTH < M) ───────────────────────────────
+    all_triplets = loader.get_all_triplets(cutoff_date)
+    train_triplets = all_triplets[all_triplets["MONTH"] < cutoff_month].copy()
+
+    result_empty = candidates[["EID", "MONTH", "PEAKID"]].copy()
+    result_empty["PREDICTED_PROFIT"] = 0.0
+
+    if train_triplets.empty:
+        return result_empty
+
+    # ── 2. Labels for training triplets ──────────────────────────────────────
+    profit_df = loader.get_price_cost_profit(train_triplets)
+    if profit_df.empty:
+        return result_empty
+
+    profit_df = profit_df[["EID", "MONTH", "PEAKID", "PROFIT"]].drop_duplicates(
+        subset=["EID", "MONTH", "PEAKID"]
+    )
+
+    # ── 3. Build feature matrix for training triplets ─────────────────────────
+    train_features = build_feature_matrix(loader, train_triplets, cutoff_date)
+
+    train_df = train_features.merge(
+        profit_df, on=["EID", "MONTH", "PEAKID"], how="inner"
+    )
+    if train_df.empty or train_df["PROFIT"].isna().all():
+        return result_empty
+
+    if len(train_df) < 2:
+        return result_empty
+
+    X_train_raw = train_df[FEATURE_COLUMNS].values
+    y_profit = train_df["PROFIT"].values
+
+    # ── 4. Scale features (fit on train only) ────────────────────────────────
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train_raw)
+
+    # ── 5. Fit LassoCV — alpha selected via time-series cross-validation ──────
+    # n_splits capped at min(5, n_samples-1) to avoid errors on small datasets.
+    n_splits = min(5, len(X_train) - 1)
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    lasso = LassoCV(cv=tscv, max_iter=50000, random_state=42)
+    lasso.fit(X_train, y_profit)
+
+    # ── 6. Build feature matrix for candidates and predict ────────────────────
+    cand_features = build_feature_matrix(loader, candidates, cutoff_date)
+    result = candidates[["EID", "MONTH", "PEAKID"]].merge(
+        cand_features[["EID", "MONTH", "PEAKID"] + FEATURE_COLUMNS],
+        on=["EID", "MONTH", "PEAKID"],
+        how="left",
+    )
+
+    X_cand = scaler.transform(result[FEATURE_COLUMNS].fillna(0.0).values)
+    result["PREDICTED_PROFIT"] = lasso.predict(X_cand)
+
+    return result[["EID", "MONTH", "PEAKID", "PREDICTED_PROFIT"]]
