@@ -24,7 +24,7 @@ SELECTOR_REGISTRY = {
 # Best known combination — update this when a better one is found.
 # Updated 2026-03-14: activation_level beats historical_profit_rate on both
 # 2020-2022 train (F1 0.1337 vs 0.0478) and 2023 val (F1 0.0967 vs 0.0354).
-DEFAULT_SCORER = 'activation_level'
+DEFAULT_SCORER = 'lightgbm' # updated 2026-06-10: lightgbm seems to have a slight edge over activation_level in some tests, but more experimentation is needed to confirm
 DEFAULT_SELECTOR = 'default'
 
 # Get input
