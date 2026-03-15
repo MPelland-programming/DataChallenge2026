@@ -1,107 +1,123 @@
 # MAG Energy Solutions - Data Challenge 2026
 
 ## 1. Contexte
-MAG Energy Solutions est un chef de file dans le trading d'électricité en Amérique du Nord. Le trading d'électricité se situe à l'intersection de l'ingénierie et de la finance, nécessitant de relier des signaux opérationnels à des opportunités financières concrètes. 
 
-Ce projet se concentre sur les produits des FTR (Financial Transmission Rights). L'issue économique se joue dans l'écart entre ce qui était anticipé et ce qui se matérialise.
+MAG Energy Solutions est un chef de file dans le trading d'électricité en Amérique du Nord. Le trading d'électricité se situe à l'intersection de l'ingénierie et de la finance, nécessitant de relier des signaux opérationnels à des opportunités financières concrètes.
+
+Ce projet se concentre sur les produits des FTR (Financial Transmission Rights). L'issue économique se joue dans l'écart entre ce qui était anticipé et ce qui se matérialise : pour chaque élément du réseau électrique, un prix réalisé (PR) horaire se concrétise au fil du mois, tandis qu'un coût d'exposition (C) mensuel est fixé par le marché. L'objectif est de sélectionner en amont les opportunités où PR − C > 0.
 
 ## 2. Objectif du Projet
-L'objectif est de construire un algorithme qui identifie les situations les plus susceptibles de générer de la valeur selon deux profils horaires (On-Peak et Off-Peak) pour le mois suivant (M+1). 
+
+L'objectif est de construire un algorithme qui identifie, à partir de données de simulations disponibles au moment de la décision (7 du mois M), les opportunités les plus susceptibles de générer de la valeur pour le mois M+1, selon deux profils horaires (On-Peak et Off-Peak).
 
 * **La mission** : Sélectionner entre 10 et 100 opportunités par mois (total ON + OFF combinés).
-* **Définition de la profitabilité** : Une opportunité est profitable lorsque PR_o - C_o > 0 (le prix réalisé mensuel est supérieur au coût d'exposition).
-* **Livrable final** : Un fichier CSV nommé opportunities.csv listant les sélections.
+* **Définition de la profitabilité** : Une opportunité `o = (EID, MONTH, PEAKID)` est profitable lorsque `PR_o − C_o > 0` (la somme des prix réalisés horaires du mois dépasse le coût d'exposition).
+* **Livrable final** : Un fichier CSV nommé `opportunities.csv` listant les sélections.
 
 ## 3. La Contrainte Temporelle (Règle Anti-Fuite)
+
 La difficulté principale du défi réside dans le moment de la décision (cutoff).
-* L'analyse est supposée être réalisée le 7 du mois M (inclus), avec les données accessibles jusqu'à 23:59:59.
-* **Information autorisée** : Historique des marchés jusqu'à M-1, prix réalisés de M jusqu'au 7 inclus, et simulations prospectives mensuelles pour M et M+1.
-* **Information strictement interdite** : Les prix réalisés ou les coûts du mois M+1, et les simulations journalières pour les jours après le 7 de M.
+
+* L'analyse est supposée être réalisée le **7 du mois M** (inclus), avec les données accessibles jusqu'à 23:59:59. En convention Hour Ending (HE), la dernière entrée valable est horodatée le 8 du mois M à 00:00:00.
+* **Informations autorisées** : Historique complet des prix/coûts jusqu'à M−1, prix réalisés de M jusqu'au 7 inclus, coût C de M, simulations mensuelles historiques + prospectives pour M et M+1, simulations journalières jusqu'au 7 de M.
+* **Informations strictement interdites** : Les prix réalisés ou les coûts du mois M+1, les prix réalisés de M après le 7, les simulations journalières après le 7 de M, tout agrégat dérivé de données interdites.
+
+L'anti-fuite est appliquée à **trois couches indépendantes** dans le code :
+1. **Couche données** (`loader.py`) : les requêtes DuckDB filtrent par `DATETIME <= cutoff_date`.
+2. **Couche features** (`features.py`) : l'historique est restreint aux mois strictement avant M.
+3. **Couche scoring** (`scoring.py`) : chaque scorer exclut explicitement le mois M de l'historique d'entraînement.
 
 ## 4. Données Disponibles
-Les données marché sont sparsifiées (seules les valeurs non nulles sont fournies, l'absence équivaut à 0) et réparties dans quatre dossiers :
-* `/data/costs` : Coûts d'exposition mensuels.
-* `/data/prices` : Prix réalisés horaires.
-* `/data/sim_monthly` : Simulations mensuelles avec 3 scénarios.
-* `/data/sim_daily` : Simulations journalières avec 3 scénarios.
+
+Les données marché sont **sparsifiées** (seules les valeurs non nulles sont fournies ; l'absence équivaut à 0) et réparties dans quatre dossiers :
+
+| Dossier | Contenu | Granularité | Colonnes clés |
+|---------|---------|-------------|---------------|
+| `/data/costs` | Coûts d'exposition mensuels | Mensuelle | `EID, MONTH, PEAKID, C` |
+| `/data/prices` | Prix réalisés horaires | Horaire | `EID, DATETIME, PEAKID, PRICEREALIZED` |
+| `/data/sim_monthly` | Simulations mensuelles (3 scénarios) | Horaire | `SCENARIOID, EID, DATETIME, PEAKID, ACTIVATIONLEVEL, impacts..., PSM` |
+| `/data/sim_daily` | Simulations journalières (3 scénarios) | Horaire | `SCENARIOID, EID, DATETIME, PEAKID, ACTIVATIONLEVEL, impacts..., PSD` |
+
+**Note de cohérence** : dans les données, le profil horaire est codé via `PEAKID` (0 = OFF, 1 = ON). Dans la sortie CSV, on utilise `PEAK_TYPE` (ON ou OFF).
 
 ---
 
-## 5. Install & Run
+## 5. Installation et Exécution
 
-### Prerequisites
+### Prérequis
+
 - Python 3.13+
-- [uv](https://docs.astral.sh/uv/) (fast Python package manager)
+- [uv](https://docs.astral.sh/uv/) (gestionnaire de paquets Python rapide)
 
-### Setup
+### Installation
 
 ```bash
-# Install dependencies
+# Installer les dépendances
 uv sync
 
-# Copy the example environment file and fill in DATA_ROOT
+# Copier le fichier d'environnement et configurer DATA_ROOT
 cp .env.example .env
-# Edit .env and set DATA_ROOT to the path of your local data folder
+# Éditer .env et définir DATA_ROOT vers le dossier de données local
 ```
 
-### Running
+### Exécution
 
 ```bash
-# Full dataset (default scorer, default selector — no args needed):
+# Jeu complet fourni (scorer et sélecteur par défaut, aucun argument requis) :
 python main.py
 
-# Explicit date range:
+# Plage de dates explicite :
 python main.py --start-month 2020-01 --end-month 2022-12
 
-# Choose a specific scorer or selector:
-python main.py --scorer historical_profit_rate --selector default
+# Choisir un scorer spécifique :
+python main.py --scorer lightgbm
 
-# All overrides:
+# Tous les paramètres :
 python main.py --start-month 2020-01 --end-month 2022-12 \
-    --scorer activation_level --selector default \
+    --scorer maxime_short --selector default \
     --data-root /path/to/data \
     --log-level DEBUG
 ```
 
-The script writes `opportunities.csv` at the **project root** (same directory as `main.py`).
+Le script écrit `opportunities.csv` à la **racine du projet** (même répertoire que `main.py`).
 
-Available scorers: `activation_level` (default), `historical_profit_rate`. Available selectors: `default`. Adding a new one requires only one line in the corresponding registry dict at the top of `main.py`.
+**Scorers disponibles** : `activation_level` (défaut), `historical_profit_rate`, `maxime_short`, `lasso`, `lightgbm`.
+**Sélecteurs disponibles** : `default`.
 
 ---
 
-## 6. Project Structure
+## 6. Structure du Projet
 
 ```
 DataChallenge2026/
-├── main.py                  # Entry point — month-by-month loop, scorer/selector registry, CLI
-├── eval_wrapper.py          # Evaluation orchestrator — runs main.py + evaluate.py, writes JSON
-├── evaluate.py              # Official scoring script (read-only, provided by organizers)
-├── datachallenge/           # Core Python package
+├── main.py                  # Point d'entrée — boucle mois par mois, registre scorer/sélecteur, CLI
+├── eval_wrapper.py          # Orchestrateur d'évaluation — exécute main.py + evaluate.py, écrit JSON
+├── evaluate.py              # Script de scoring officiel (lecture seule, fourni par les organisateurs)
+├── datachallenge/           # Package Python principal
 │   ├── __init__.py
-│   ├── config.py            # Settings loaded from .env (DATA_ROOT, LOG_LEVEL, LOG_FILE)
-│   ├── logger.py            # Shared logger (stderr + optional file handler)
-│   ├── loader.py            # CustomDataLoader — queries parquet files via DuckDB
-│   ├── schemas.py           # TypedDict definitions documenting DataFrame column schemas
-│   ├── candidates.py        # build_candidate_pool — expands known EIDs to both PEAKID values
-│   ├── scoring.py           # ScorerProtocol + score_by_activation_level / score_by_historical_profit_rate
-│   ├── selection.py         # SelectorProtocol + select_opportunities (10–100 constraint)
-│   └── output.py            # write_opportunities — validates and writes opportunities.csv
-├── tests/                   # Unit + integration tests (33 tests, all passing)
-│   ├── conftest.py          # Shared pytest fixtures (loader instance)
-│   ├── test_loader.py       # Integration tests for loader methods
-│   ├── test_scoring.py      # Unit tests for scoring functions (mock-based)
-│   ├── test_selection.py    # Unit tests for select_opportunities
-│   └── test_output.py       # Unit tests for write_opportunities
-├── results/                 # Committed evaluation results — one JSON per (scorer, selector, period)
-│   ├── activation_level__default__202001_202212.json
-│   ├── activation_level__default__202301_202312.json
-│   ├── historical_profit_rate__default__202001_202212.json
-│   └── historical_profit_rate__default__202301_202312.json
-├── notebooks/               # Data exploration notebooks (committed)
-├── HYPOTHESES.md            # Data analysis, hypothesis verdicts, modeling approach
-├── .env.example             # Template for environment variables
-├── requirements.txt         # Pinned dependencies (use uv sync to install)
-└── data/                    # Local data folder (git-ignored)
+│   ├── config.py            # Configuration chargée depuis .env (DATA_ROOT, LOG_LEVEL, LOG_FILE)
+│   ├── logger.py            # Logger partagé (stderr + fichier optionnel)
+│   ├── loader.py            # CustomDataLoader — requêtes parquet via DuckDB (6 méthodes)
+│   ├── schemas.py           # Définitions TypedDict documentant les schémas de colonnes
+│   ├── candidates.py        # build_candidate_pool — construit le pool candidat depuis l'univers sim
+│   ├── features.py          # build_feature_matrix — ingénierie de 36 features (V3)
+│   ├── scoring.py           # 5 scorers : activation_level, historical_profit_rate, maxime_short, lasso, lightgbm
+│   ├── selection.py         # select_opportunities — applique la contrainte 10–100
+│   └── output.py            # write_opportunities — valide et écrit opportunities.csv
+├── tests/                   # Tests unitaires + intégration (33 tests)
+│   ├── conftest.py          # Fixtures pytest partagées (instance du loader)
+│   ├── test_loader.py       # Tests d'intégration pour les méthodes du loader
+│   ├── test_candidates.py   # Tests du pool candidat
+│   ├── test_features.py     # Tests de la matrice de features
+│   ├── test_scoring.py      # Tests unitaires des scorers (mocks)
+│   ├── test_selection.py    # Tests de la sélection
+│   └── test_output.py       # Tests de validation de la sortie
+├── results/                 # Résultats d'évaluation — un JSON par (scorer, sélecteur, période)
+├── notebooks/               # Notebooks d'exploration des données
+├── HYPOTHESES.md            # Analyse des données, verdicts d'hypothèses, approche de modélisation
+├── .env.example             # Template des variables d'environnement
+├── requirements.txt         # Dépendances Python
+└── data/                    # Dossier de données local (git-ignored)
     ├── costs/costs.parquet
     ├── prices/prices.parquet
     ├── sim_daily/sim_daily_<year>.parquet
@@ -110,88 +126,240 @@ DataChallenge2026/
 
 ---
 
-## 7. Evaluating Your Output
+## 7. Évaluation
 
-### Official script — `evaluate.py`
+### Script officiel — `evaluate.py`
 
-Provided by MAG Energy Solutions (read-only). Reads `opportunities.csv` and computes the two quantitative grading axes against realized data.
+Fourni par MAG Energy Solutions (lecture seule). Lit `opportunities.csv` et calcule les deux axes quantitatifs de notation (F1-score et profit net) à partir des données réalisées.
 
 ```bash
 python evaluate.py opportunities.csv --start-month 2020-01 --end-month 2023-12
 ```
 
-Outputs: F1-score (ON/OFF separately + average), net profit, month-by-month breakdown.
+> `evaluate.py` lit les données depuis `./data/` relativement à son emplacement. L'exécuter depuis la racine du projet. **Ne pas le modifier.**
 
-> `evaluate.py` reads data from `./data/` relative to its location. Run it from the project root. **Do not modify it.**
+### Wrapper d'évaluation — `eval_wrapper.py`
 
-### Evaluation wrapper — `eval_wrapper.py`
-
-Automates the full loop: runs `main.py`, then `evaluate.py`, parses the output, and saves a JSON result to `results/`.
+Automatise la boucle complète : exécute `main.py`, puis `evaluate.py`, parse la sortie et sauvegarde un JSON dans `results/`.
 
 ```bash
-# Standard run — generates opportunities.csv then evaluates:
+# Exécution standard — génère opportunities.csv puis évalue :
 python eval_wrapper.py --scorer activation_level --selector default \
     --start-month 2020-01 --end-month 2022-12
 
-# Re-evaluate an existing opportunities.csv without re-running main.py:
+# Ré-évaluer un opportunities.csv existant sans ré-exécuter main.py :
 python eval_wrapper.py --scorer activation_level --selector default \
     --start-month 2020-01 --end-month 2022-12 --dry-run
 ```
 
-Output is saved to `results/{scorer}__{selector}__{start}_{end}.json` with aggregate metrics and a per-month breakdown. Results in `results/` are committed — they are the record of what was tried and when.
+---
+
+## 8. Découpage Entraînement / Validation
+
+Le jeu de données fourni couvre **2020–2023**. Un jeu out-of-sample 2024 sera distribué ultérieurement. Le scoring final utilise 2025 (jamais fourni).
+
+| Période | Usage | Commande |
+|---------|-------|----------|
+| 2020-01 → 2023-12 | Évaluation complète (jeu fourni) | `python main.py` |
+| 2020-01 → 2022-12 | Entraînement | `python main.py --end-month 2022-12` |
+| 2023-01 → 2023-12 | Validation | `python main.py --start-month 2023-01` |
+| 2024-01 → 2024-12 | Out-of-sample (quand disponible) | `python main.py --start-month 2024-01 --end-month 2024-12` |
+
+L'anti-fuite est appliquée automatiquement pour chaque mois — il n'y a aucun risque de contamination entre périodes, quel que soit l'intervalle de dates choisi.
 
 ---
 
-## 8. Recommended Train / Validation Split
+## 9. Approche Méthodologique
 
-The provided dataset covers **2020–2023**. A 2024 out-of-sample set will be distributed later for robustness testing. Final scoring uses 2025 (never provided).
+### 9.1. Pipeline Général
 
-| Purpose | Period | Command |
-|---------|--------|---------|
-| Default evaluation (full provided set) | 2020-01 → 2023-12 | `python main.py` |
-| Training only | 2020-01 → 2022-12 | `python main.py --start-month 2020-01 --end-month 2022-12` |
-| Validation only | 2023-01 → 2023-12 | `python main.py --start-month 2023-01 --end-month 2023-12` |
-| Out-of-sample (2024, when available) | 2024-01 → 2024-12 | `python main.py --start-month 2024-01 --end-month 2024-12` |
+Pour chaque mois cible M+1, le pipeline s'exécute comme suit :
 
-The anti-leakage cutoff is enforced automatically for every month — there is no risk of data contamination between periods regardless of the date range chosen.
+```
+1. build_candidate_pool()   → Charger tous les (EID, PEAKID) de l'univers de simulation mensuelle
+                               pour M+1 (~170k paires par mois)
+2. scorer_fn()              → Scorer chaque candidat avec le scorer sélectionné
+3. select_opportunities()   → Dédupliquer, trier par score décroissant,
+                               sélectionner les top-N avec score > 0, borné à [10, 100]
+4. write_opportunities()    → Écrire le CSV : TARGET_MONTH, PEAK_TYPE, EID
+```
+
+### 9.2. Stratégies de Scoring
+
+Cinq scorers sont implémentés dans `datachallenge/scoring.py`, sélectionnables via `--scorer` :
+
+#### `activation_level` (défaut actuel)
+
+**Type** : Heuristique non-supervisée (sans entraînement).
+
+**Score** : `mean(ACTIVATIONLEVEL)` à travers les 3 scénarios de simulation mensuelle pour le mois M+1. Les triplets absents des simulations reçoivent un score de 0.
+
+**Justification** : Malgré l'analyse d'hypothèses montrant que ACTIVATIONLEVEL est négativement associé à la profitabilité au niveau de la population (AUC = 0.424, Spearman r = −0.12), le scoring par **classement top-k** est robuste au changement de distribution entre périodes. Les seuils absolus (ex. sélectionner tout au-dessus de 42%) collapsent à 0 sélection en 2023, alors que le top-k reste stable. Ce scorer concentre les contraintes les plus actives et documentées dans le top 100 — celles-ci impliquent des swings de prix plus importants en valeur absolue.
+
+#### `historical_profit_rate`
+
+**Type** : Heuristique basée sur l'historique (sans entraînement).
+
+**Score** : Fraction des mois historiques où `PROFIT > 0` pour chaque paire `(EID, PEAKID)`, calculée sur les mois strictement avant M. Les EIDs sans historique reçoivent le taux de profit moyen global comme fallback.
+
+**Justification** : Exploite l'observation que 68.9% des paires avec ≥6 mois d'historique ont un taux de profit supérieur à 50% (« chronic winners »). Cependant, le signal est dilué par l'expansion du pool candidat (~170k paires).
+
+#### `maxime_short` (supervisé, deux têtes)
+
+**Type** : Modèle supervisé hybride LogisticRegression + Ridge.
+
+**Score** : `P × V` où P = probabilité de profit (tête logistique) et V = profit prédit (tête Ridge).
+
+**Entraînement** : Walk-forward — tous les triplets historiques avec MONTH < M. Un embargo de 1 mois est appliqué implicitement. La tête logistique utilise `class_weight="balanced"` pour compenser le déséquilibre des classes (<5% profitables). La tête Ridge pondère les exemples profitables 2× les non-profitables.
+
+**Features** : Matrice complète de 36 features (voir Section 10).
+
+#### `lasso`
+
+**Type** : Régression Lasso avec sélection automatique de features.
+
+**Score** : Prédiction directe du PROFIT par régression.
+
+**Entraînement** : Walk-forward, avec sélection de l'hyperparamètre alpha via `LassoCV` et `TimeSeriesSplit`. Alpha est recalculé à chaque cutoff pour s'adapter à l'historique disponible. La pénalité L1 envoie les coefficients des features non-pertinentes vers zéro, offrant une sélection de features implicite utile pour l'interprétabilité.
+
+**Features** : Matrice complète de 36 features (voir Section 10).
+
+#### `lightgbm`
+
+**Type** : Classificateur par gradient boosting (LightGBM).
+
+**Score** : `predict_proba[:, 1]` = probabilité d'être profitable.
+
+**Entraînement** : Walk-forward, label binaire `(PROFIT > 0)`. Entraîne en quelques secondes sur les ~170k candidats grâce aux splits par histogrammes. Ne nécessite pas de StandardScaler (les splits d'arbres sont basés sur les rangs).
+
+**Hyperparamètres** : `n_estimators=200, max_depth=4, learning_rate=0.05, subsample=0.9, colsample_bytree=0.9, min_child_samples=100, reg_alpha=2.0, reg_lambda=2.0`.
+
+**Features** : Matrice complète de 36 features (voir Section 10).
+
+### 9.3. Logique de Sélection
+
+La fonction `select_opportunities()` applique la contrainte de 10–100 opportunités par mois :
+
+1. **Dédupliquer** : moyenner le score par triplet `(EID, MONTH, PEAKID)`.
+2. **Trier** : par score décroissant.
+3. **Compter** : n_profitable = nombre de candidats avec score > 0.
+4. **Sélectionner** : si n_profitable < 10 → top 10 ; si n_profitable > 100 → top 100 ; sinon → tous les positifs.
 
 ---
 
-## 9. Methodological Approach
+## 10. Ingénierie des Features (36 features)
 
-Two scoring strategies are implemented in `datachallenge/scoring.py` and selectable via `--scorer`:
+Le module `datachallenge/features.py` construit une matrice de features plate (une ligne par triplet) utilisée par les trois scorers supervisés (`maxime_short`, `lasso`, `lightgbm`). Toutes les features respectent la contrainte anti-fuite : elles sont dérivées uniquement des données disponibles au cutoff (7 du mois M).
 
-### `activation_level` (current default)
-Score = `mean(m_ACTIVATIONLEVEL)` across all 3 monthly simulation scenarios for month M+1. Triplets absent from the sims receive score 0. The top candidates by score are selected (10–100 per month).
+### 10.1. Features de profit estimé (4 features)
 
-Despite the hypothesis analysis showing ACTIVATIONLEVEL is negatively associated with profitability at the population level (AUC=0.424), this scorer outperforms the historical baseline in empirical evaluation — see Section 10 for details.
+| Feature | Description | Source |
+|---------|-------------|--------|
+| `estimated_profit` | `mean(|SUM(PSM)|) − cost_proxy` : différence entre le revenu simulé moyen et le coût proxy | Sim mensuelle M+1 + Coûts M |
+| `sum_abs_psm_s1` | `|SUM(PSM)|` pour le scénario 1 — revenu simulé total en valeur absolue | Sim mensuelle M+1 |
+| `sum_abs_psm_s2` | `|SUM(PSM)|` pour le scénario 2 | Sim mensuelle M+1 |
+| `cost_proxy` | `abs(C_M)` : coût d'exposition du mois M en valeur absolue. Fallback : médiane historique des `|C|` pour les triplets absents de M | Coûts M |
 
-### `historical_profit_rate`
-Score = fraction of months where `|PR| − C > 0`, computed over all months strictly before the cutoff (month M and earlier). Uses only price/cost data available at decision time — no future leakage. EIDs with no history receive the global average win rate as a fallback.
+### 10.2. Features de consensus inter-scénarios (2 features)
 
-**Selection pipeline** (`datachallenge/selection.py`): deduplicates by averaging scores per triplet, sorts descending, selects the top *n* where *n* = number of candidates with score > 0, clamped to [10, 100]. **Output** (`datachallenge/output.py`): writes `opportunities.csv` with columns `TARGET_MONTH`, `PEAK_TYPE`, `EID`.
+| Feature | Description | Source |
+|---------|-------------|--------|
+| `psm_cv_scenarios` | Coefficient de variation `std(|SUM(PSM)|) / mean(|SUM(PSM)|)` entre les 3 scénarios — mesure l'incertitude du modèle | Sim mensuelle M+1 |
+| `estimated_profit_pessimistic` | `min(|SUM(PSM)|_s − cost_proxy)` sur les 3 scénarios — profit estimé dans le pire cas | Sim mensuelle M+1 + Coûts M |
 
-**Anti-leak guarantee**: the 7th-of-month cutoff is strictly enforced in the loader and in every scorer. See `HYPOTHESES.md` for full data analysis.
+### 10.3. Features d'activation et d'impacts (12 features)
+
+Issues des simulations mensuelles pour M+1, agrégées sur les 3 scénarios.
+
+| Feature | Description |
+|---------|-------------|
+| `mean_activation` | Moyenne de `ACTIVATIONLEVEL` — intensité moyenne de l'opportunité (en %) |
+| `max_activation` | Maximum de `ACTIVATIONLEVEL` — capture les événements extrêmes |
+| `pct_high_activation` | Proportion des heures avec `ACTIVATIONLEVEL > 50%` — fréquence d'activité élevée |
+| `mean_wind` | Moyenne de `WINDIMPACT` — contribution de l'éolien à l'intensité |
+| `mean_solar` | Moyenne de `SOLARIMPACT` — contribution du solaire |
+| `mean_hydro` | Moyenne de `HYDROIMPACT` — contribution de l'hydraulique |
+| `mean_nonrenew` | Moyenne de `NONRENEWBALIMPACT` — contribution des non-renouvelables |
+| `mean_external` | Moyenne de `EXTERNALIMPACT` — contribution des facteurs externes |
+| `mean_transmission_outage` | Moyenne de `TRANSMISSIONOUTAGEIMPACT` — impact des pannes de transmission |
+| `mean_load` | Moyenne de `LOADIMPACT` — impact de la charge |
+| `n_hours_active` | Nombre d'heures avec `PSM ≠ 0` (moyenné sur les scénarios) — proxy de la durée d'activité |
+| `impact_concentration` | `max(|src_impacts|) / sum(|src_impacts|)` — mesure la concentration : un impact domine-t-il ? |
+
+**Note** : Les impacts "par source" (wind, solar, hydro, nonrenew, external) constituent une somme partielle de `ACTIVATIONLEVEL`. Les variables `LOADIMPACT` et `TRANSMISSIONOUTAGEIMPACT` sont des variables explicatives avec chevauchements et ne doivent pas être sommées avec les impacts par source.
+
+### 10.4. Features de simulation journalière (5 features)
+
+Issues des simulations journalières pour le mois M, jours 1 à 7 (avant le cutoff).
+
+| Feature | Description |
+|---------|-------------|
+| `daily_sum_abs_psd` | Moyenne sur les 3 scénarios de `|SUM(PSD)|` — signal prix court-terme |
+| `daily_mean_activation` | Moyenne de `ACTIVATIONLEVEL` dans les sims journalières |
+| `daily_max_activation` | Maximum de `ACTIVATIONLEVEL` dans les sims journalières |
+| `daily_mean_trans_outage` | Moyenne de `TRANSMISSIONOUTAGEIMPACT` dans les sims journalières |
+| `daily_n_hours_active` | Nombre d'heures avec `PSD ≠ 0` dans les sims journalières |
+
+### 10.5. Features historiques (9 features)
+
+Calculées sur les mois strictement avant M pour chaque paire `(EID, PEAKID)`.
+
+| Feature | Description |
+|---------|-------------|
+| `hist_win_rate` | Fraction des mois historiques profitables. Fallback : taux moyen global pour les EIDs sans historique |
+| `hist_n_months` | Nombre de mois historiques avec données — proxy de l'ancienneté de l'élément |
+| `hist_mean_profit` | Profit moyen historique |
+| `hist_std_profit` | Écart-type du profit historique — proxy de la volatilité |
+| `hist_last_6m_win_rate` | Taux de profit sur les 6 derniers mois — signal de récence |
+| `hist_consecutive_wins` | Série de victoires consécutives (mois profitables en continu) en partant du plus récent |
+| `hist_seasonal_win_rate` | Taux de profit pour le même mois calendaire dans les années précédentes — capture la saisonnalité |
+| `hist_mean_cost` | Coût moyen historique |
+| `hist_mean_price` | Prix réalisé moyen historique |
+
+### 10.6. Features dérivées (4 features)
+
+| Feature | Description |
+|---------|-------------|
+| `profit_per_active_hour` | `estimated_profit / max(n_hours_active, 1)` — rentabilité par heure d'activité |
+| `monthly_daily_ratio` | `daily_sum_abs_psd / mean_sum_abs_psm` — rapport entre signal court-terme et signal mensuel |
+| `month_sin` | `sin(2π × mois_M+1 / 12)` — encodage circulaire saisonnier |
+| `month_cos` | `cos(2π × mois_M+1 / 12)` — encodage circulaire saisonnier (composante complémentaire) |
 
 ---
 
-## 10. Results and Analysis
+## 11. Résultats et Analyse
 
-Full per-run results (with monthly breakdowns) are in `results/`. Evaluation performed with `eval_wrapper.py` on 2020–2022 (train) and 2023 (validation).
+Les résultats détaillés (avec ventilations mensuelles) sont dans `results/`. L'évaluation a été réalisée avec `eval_wrapper.py` sur 2020–2022 (entraînement) et 2023 (validation).
 
-### Model comparison table
+### Tableau comparatif des scorers
 
-| Scorer | Selector | Period | F1 avg | F1 OFF | F1 ON | Precision | Recall | Net Profit |
-|--------|----------|--------|--------|--------|-------|-----------|--------|------------|
-| `activation_level` | `default` | 2020–2022 (train) | **0.1337** | 0.1362 | 0.1312 | 0.360 | 0.082 | **3,471,724** |
-| `historical_profit_rate` | `default` | 2020–2022 (train) | 0.0478 | 0.0493 | 0.0464 | 0.132 | 0.029 | 783,256 |
-| `activation_level` | `default` | 2023 (val) | **0.0967** | 0.0977 | 0.0957 | 0.202 | 0.064 | **132,999** |
-| `historical_profit_rate` | `default` | 2023 (val) | 0.0354 | 0.0308 | 0.0400 | 0.074 | 0.029 | 17,641 |
+| Scorer | Période | F1 avg | F1 OFF | F1 ON | Precision | Recall | Profit Net |
+|--------|---------|--------|--------|-------|-----------|--------|------------|
+| `activation_level` | 2020–2022 (train) | **0.1337** | 0.1362 | 0.1312 | 0.360 | 0.082 | **3,471,724** |
+| `historical_profit_rate` | 2020–2022 (train) | 0.0478 | 0.0493 | 0.0464 | 0.132 | 0.029 | 783,256 |
+| `activation_level` | 2023 (val) | **0.0967** | 0.0977 | 0.0957 | 0.202 | 0.064 | **132,999** |
+| `historical_profit_rate` | 2023 (val) | 0.0354 | 0.0308 | 0.0400 | 0.074 | 0.029 | 17,641 |
 
-### Interpretation
+*Note : Les résultats pour les scorers supervisés (`maxime_short`, `lasso`, `lightgbm`) sont en cours d'évaluation.*
 
-**`activation_level` wins on all metrics** across both periods, despite H1 in `HYPOTHESES.md` concluding it is anti-predictive at the population level (AUC=0.424, Spearman r=−0.12). The likely explanation: the anti-predictive finding applies to threshold-based selection (select all above 42% activation → F1=0 in 2023), whereas **top-k ranking** still concentrates more active, better-documented constraints in the top 100 — and those constraints, even if already priced in on average, involve larger price swings that generate higher absolute profit.
+### Interprétation
 
-**`historical_profit_rate` underperforms** its theoretical motivation (H4: 69% of pairs have >50% win rate). The most likely cause is that the historical signal is strongly diluted by the candidate pool expansion: the pool includes all known EIDs × 2 PEAKID values, meaning many candidates share similar historical rates and the ranking does not spread as effectively across months.
+**`activation_level` domine sur toutes les métriques** dans les deux périodes, malgré le fait que `ACTIVATIONLEVEL` soit anti-prédictif au niveau de la population (AUC = 0.424, Spearman r = −0.12). L'explication probable : l'observation anti-prédictive s'applique à la sélection par seuil (sélectionner tout au-dessus de 42% d'activation → F1 = 0 en 2023), alors que le **classement top-k** concentre les contraintes les plus actives et documentées dans le top 100 — celles-ci impliquent des swings de prix plus importants qui génèrent un profit absolu supérieur.
 
-**Current recommendation**: use `activation_level + default` (the default with no extra arguments). The next improvement to explore is an inverted or hybrid signal (see `HYPOTHESES.md` § Model B) or candidate pool refinement.
+**`historical_profit_rate` sous-performe** sa motivation théorique (69% des paires avec ≥6 mois d'historique ont un taux de profit > 50%). La cause probable : le signal historique est fortement dilué par l'expansion du pool candidat (~170k paires), où de nombreux candidats partagent des taux similaires.
+
+**Recommandation actuelle** : utiliser `activation_level` (défaut, aucun argument supplémentaire). Les scorers supervisés (`maxime_short`, `lasso`, `lightgbm`) exploitent la matrice complète de 36 features et représentent la piste d'amélioration principale.
+
+---
+
+## 12. Grille d'Évaluation (rappel)
+
+Le classement final combine trois axes :
+
+| Axe | Poids | Métrique |
+|-----|-------|----------|
+| Axe 1 — F1-score | 25% | Capacité à identifier correctement les opportunités profitables (moyenne ON/OFF) |
+| Axe 2 — Profit total net | 25% | Valeur économique générée par la sélection (`Σ (PR_o − C_o)` sur toutes les sélections) |
+| Axe 3 — Jury | 50% | Approche méthodologique, qualité technique, pertinence de la solution, communication |
+
+Chaque axe est normalisé par le rang des équipes. L'équipe avec le score final pondéré le plus élevé remporte la compétition.
