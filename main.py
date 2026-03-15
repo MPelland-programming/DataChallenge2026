@@ -22,9 +22,14 @@ SELECTOR_REGISTRY = {
 }
 
 # Best known combination — update this when a better one is found.
-# Updated 2026-03-14: activation_level beats historical_profit_rate on both
-# 2020-2022 train (F1 0.1337 vs 0.0478) and 2023 val (F1 0.0967 vs 0.0354).
-DEFAULT_SCORER = 'lightgbm' # updated 2026-06-10: lightgbm seems to have a slight edge over activation_level in some tests, but more experimentation is needed to confirm
+# Updated 2026-03-14: full 2020-2024 eval (sim universe) confirms activation_level is best.
+# Reverts remote change to lightgbm (2026-06-10): full eval shows lightgbm F1=0.0430/profit=573k
+# vs activation_level F1=0.0826/profit=4.55M — lightgbm is clearly inferior on both axes.
+#   activation_level:      F1=0.0826  profit=4,552,490  (confirmed default)
+#   maxime_short:          F1=0.0571  profit=4,374,846  (competitive profit, -31% F1)
+#   lightgbm:              F1=0.0430  profit=  573,723  (poor profit despite ok F1)
+#   historical_profit_rate:F1=0.0338  profit=  900,321  (worst across both axes)
+DEFAULT_SCORER = 'activation_level'
 DEFAULT_SELECTOR = 'default'
 
 # Get input

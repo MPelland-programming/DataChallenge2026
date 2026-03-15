@@ -1,0 +1,448 @@
+{
+  "scorer": "maxime_short",
+  "selector": "default",
+  "start_month": "2020-01",
+  "end_month": "2024-12",
+  "universe": "sim",
+  "aggregate": {
+    "f1_off": 0.0607,
+    "f1_on": 0.0536,
+    "f1_avg": 0.0571,
+    "precision_off": 0.1692,
+    "precision_on": 0.1336,
+    "recall_off": 0.0369,
+    "recall_on": 0.0335,
+    "tp_off": 448,
+    "fp_off": 2199,
+    "fn_off": 11677,
+    "tp_on": 424,
+    "fp_on": 2749,
+    "fn_on": 12224,
+    "net_profit": 4374845.5,
+    "n_selected": 5820,
+    "n_profitable": 872,
+    "n_losing": 4948
+  },
+  "monthly": [
+    {
+      "month": "2020-01",
+      "n_selected": 10,
+      "tp": 0,
+      "fp": 10,
+      "profit": 0.0
+    },
+    {
+      "month": "2020-02",
+      "n_selected": 10,
+      "tp": 0,
+      "fp": 10,
+      "profit": 0.0
+    },
+    {
+      "month": "2020-03",
+      "n_selected": 100,
+      "tp": 42,
+      "fp": 58,
+      "profit": 55860.56
+    },
+    {
+      "month": "2020-04",
+      "n_selected": 100,
+      "tp": 30,
+      "fp": 70,
+      "profit": -60542.74
+    },
+    {
+      "month": "2020-05",
+      "n_selected": 100,
+      "tp": 32,
+      "fp": 68,
+      "profit": 11370.17
+    },
+    {
+      "month": "2020-06",
+      "n_selected": 100,
+      "tp": 33,
+      "fp": 67,
+      "profit": 89094.3
+    },
+    {
+      "month": "2020-07",
+      "n_selected": 100,
+      "tp": 14,
+      "fp": 86,
+      "profit": -45452.15
+    },
+    {
+      "month": "2020-08",
+      "n_selected": 100,
+      "tp": 22,
+      "fp": 78,
+      "profit": -22016.76
+    },
+    {
+      "month": "2020-09",
+      "n_selected": 100,
+      "tp": 22,
+      "fp": 78,
+      "profit": -7523.02
+    },
+    {
+      "month": "2020-10",
+      "n_selected": 100,
+      "tp": 15,
+      "fp": 85,
+      "profit": 113115.11
+    },
+    {
+      "month": "2020-11",
+      "n_selected": 100,
+      "tp": 24,
+      "fp": 76,
+      "profit": 249146.0
+    },
+    {
+      "month": "2020-12",
+      "n_selected": 100,
+      "tp": 19,
+      "fp": 81,
+      "profit": 35417.85
+    },
+    {
+      "month": "2021-01",
+      "n_selected": 100,
+      "tp": 20,
+      "fp": 80,
+      "profit": 78026.34
+    },
+    {
+      "month": "2021-02",
+      "n_selected": 100,
+      "tp": 21,
+      "fp": 79,
+      "profit": 35522.29
+    },
+    {
+      "month": "2021-03",
+      "n_selected": 100,
+      "tp": 19,
+      "fp": 81,
+      "profit": 188031.06
+    },
+    {
+      "month": "2021-04",
+      "n_selected": 100,
+      "tp": 19,
+      "fp": 81,
+      "profit": 37419.56
+    },
+    {
+      "month": "2021-05",
+      "n_selected": 100,
+      "tp": 14,
+      "fp": 86,
+      "profit": -11357.45
+    },
+    {
+      "month": "2021-06",
+      "n_selected": 100,
+      "tp": 27,
+      "fp": 73,
+      "profit": 164185.36
+    },
+    {
+      "month": "2021-07",
+      "n_selected": 100,
+      "tp": 19,
+      "fp": 81,
+      "profit": 123284.98
+    },
+    {
+      "month": "2021-08",
+      "n_selected": 100,
+      "tp": 20,
+      "fp": 80,
+      "profit": 348565.38
+    },
+    {
+      "month": "2021-09",
+      "n_selected": 100,
+      "tp": 24,
+      "fp": 76,
+      "profit": 250918.78
+    },
+    {
+      "month": "2021-10",
+      "n_selected": 100,
+      "tp": 15,
+      "fp": 85,
+      "profit": 45416.87
+    },
+    {
+      "month": "2021-11",
+      "n_selected": 100,
+      "tp": 18,
+      "fp": 82,
+      "profit": -92639.06
+    },
+    {
+      "month": "2021-12",
+      "n_selected": 100,
+      "tp": 21,
+      "fp": 79,
+      "profit": 77348.75
+    },
+    {
+      "month": "2022-01",
+      "n_selected": 100,
+      "tp": 16,
+      "fp": 84,
+      "profit": 221046.22
+    },
+    {
+      "month": "2022-02",
+      "n_selected": 100,
+      "tp": 17,
+      "fp": 83,
+      "profit": 424014.53
+    },
+    {
+      "month": "2022-03",
+      "n_selected": 100,
+      "tp": 22,
+      "fp": 78,
+      "profit": 13761.55
+    },
+    {
+      "month": "2022-04",
+      "n_selected": 100,
+      "tp": 16,
+      "fp": 84,
+      "profit": 1669.27
+    },
+    {
+      "month": "2022-05",
+      "n_selected": 100,
+      "tp": 20,
+      "fp": 80,
+      "profit": 70781.92
+    },
+    {
+      "month": "2022-06",
+      "n_selected": 100,
+      "tp": 14,
+      "fp": 86,
+      "profit": 118126.7
+    },
+    {
+      "month": "2022-07",
+      "n_selected": 100,
+      "tp": 13,
+      "fp": 87,
+      "profit": 47793.28
+    },
+    {
+      "month": "2022-08",
+      "n_selected": 100,
+      "tp": 19,
+      "fp": 81,
+      "profit": 139965.38
+    },
+    {
+      "month": "2022-09",
+      "n_selected": 100,
+      "tp": 26,
+      "fp": 74,
+      "profit": 219057.25
+    },
+    {
+      "month": "2022-10",
+      "n_selected": 100,
+      "tp": 12,
+      "fp": 88,
+      "profit": 66799.84
+    },
+    {
+      "month": "2022-11",
+      "n_selected": 100,
+      "tp": 19,
+      "fp": 81,
+      "profit": 57661.92
+    },
+    {
+      "month": "2022-12",
+      "n_selected": 100,
+      "tp": 13,
+      "fp": 87,
+      "profit": 118341.15
+    },
+    {
+      "month": "2023-01",
+      "n_selected": 100,
+      "tp": 9,
+      "fp": 91,
+      "profit": -109090.39
+    },
+    {
+      "month": "2023-02",
+      "n_selected": 100,
+      "tp": 7,
+      "fp": 93,
+      "profit": -93032.45
+    },
+    {
+      "month": "2023-03",
+      "n_selected": 100,
+      "tp": 7,
+      "fp": 93,
+      "profit": -87629.88
+    },
+    {
+      "month": "2023-04",
+      "n_selected": 100,
+      "tp": 9,
+      "fp": 91,
+      "profit": 82398.43
+    },
+    {
+      "month": "2023-05",
+      "n_selected": 100,
+      "tp": 6,
+      "fp": 94,
+      "profit": -107271.91
+    },
+    {
+      "month": "2023-06",
+      "n_selected": 100,
+      "tp": 10,
+      "fp": 90,
+      "profit": 23393.54
+    },
+    {
+      "month": "2023-07",
+      "n_selected": 100,
+      "tp": 4,
+      "fp": 96,
+      "profit": 3785.25
+    },
+    {
+      "month": "2023-08",
+      "n_selected": 100,
+      "tp": 9,
+      "fp": 91,
+      "profit": 64262.5
+    },
+    {
+      "month": "2023-09",
+      "n_selected": 100,
+      "tp": 5,
+      "fp": 95,
+      "profit": 46561.93
+    },
+    {
+      "month": "2023-10",
+      "n_selected": 100,
+      "tp": 5,
+      "fp": 95,
+      "profit": 36760.97
+    },
+    {
+      "month": "2023-11",
+      "n_selected": 100,
+      "tp": 7,
+      "fp": 93,
+      "profit": 49290.54
+    },
+    {
+      "month": "2023-12",
+      "n_selected": 100,
+      "tp": 5,
+      "fp": 95,
+      "profit": 34625.92
+    },
+    {
+      "month": "2024-01",
+      "n_selected": 100,
+      "tp": 12,
+      "fp": 88,
+      "profit": 430909.19
+    },
+    {
+      "month": "2024-02",
+      "n_selected": 100,
+      "tp": 3,
+      "fp": 97,
+      "profit": -4462.19
+    },
+    {
+      "month": "2024-03",
+      "n_selected": 100,
+      "tp": 3,
+      "fp": 97,
+      "profit": 18081.4
+    },
+    {
+      "month": "2024-04",
+      "n_selected": 100,
+      "tp": 10,
+      "fp": 90,
+      "profit": 48545.81
+    },
+    {
+      "month": "2024-05",
+      "n_selected": 100,
+      "tp": 7,
+      "fp": 93,
+      "profit": 20123.28
+    },
+    {
+      "month": "2024-06",
+      "n_selected": 100,
+      "tp": 5,
+      "fp": 95,
+      "profit": 18844.68
+    },
+    {
+      "month": "2024-07",
+      "n_selected": 100,
+      "tp": 8,
+      "fp": 92,
+      "profit": 87915.17
+    },
+    {
+      "month": "2024-08",
+      "n_selected": 100,
+      "tp": 8,
+      "fp": 92,
+      "profit": 3924.56
+    },
+    {
+      "month": "2024-09",
+      "n_selected": 100,
+      "tp": 8,
+      "fp": 92,
+      "profit": 46455.66
+    },
+    {
+      "month": "2024-10",
+      "n_selected": 100,
+      "tp": 11,
+      "fp": 89,
+      "profit": 162048.19
+    },
+    {
+      "month": "2024-11",
+      "n_selected": 100,
+      "tp": 12,
+      "fp": 88,
+      "profit": 268318.09
+    },
+    {
+      "month": "2024-12",
+      "n_selected": 100,
+      "tp": 5,
+      "fp": 95,
+      "profit": 167875.84
+    }
+  ]
+}
