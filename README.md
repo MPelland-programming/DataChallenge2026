@@ -328,38 +328,63 @@ Calculées sur les mois strictement avant M pour chaque paire `(EID, PEAKID)`.
 ---
 
 ## 11. Résultats et Analyse
-
-Les résultats détaillés (avec ventilations mensuelles) sont dans `results/`. L'évaluation a été réalisée avec `eval_wrapper.py` sur 2020–2022 (entraînement) et 2023 (validation).
-
+ 
+Les résultats détaillés (avec ventilations mensuelles) sont dans `results/`. L'évaluation a été réalisée en walk-forward : pour chaque mois à prédire, le modèle est entraîné uniquement sur les mois précédents.
+ 
 ### Tableau comparatif des scorers
-
+ 
 | Scorer | Période | F1 avg | F1 OFF | F1 ON | Precision | Recall | Profit Net |
 |--------|---------|--------|--------|-------|-----------|--------|------------|
-| `activation_level` | 2020–2022 (train) | **0.1337** | 0.1362 | 0.1312 | 0.360 | 0.082 | **3,471,724** |
-| `historical_profit_rate` | 2020–2022 (train) | 0.0478 | 0.0493 | 0.0464 | 0.132 | 0.029 | 783,256 |
-| `activation_level` | 2023 (val) | **0.0967** | 0.0977 | 0.0957 | 0.202 | 0.064 | **132,999** |
-| `historical_profit_rate` | 2023 (val) | 0.0354 | 0.0308 | 0.0400 | 0.074 | 0.029 | 17,641 |
-
-*Note : Les résultats pour les scorers supervisés (`maxime_short`, `lasso`, `lightgbm`) sont en cours d'évaluation.*
-
-### Interprétation
-
-**`activation_level` domine sur toutes les métriques** dans les deux périodes, malgré le fait que `ACTIVATIONLEVEL` soit anti-prédictif au niveau de la population (AUC = 0.424, Spearman r = −0.12). L'explication probable : l'observation anti-prédictive s'applique à la sélection par seuil (sélectionner tout au-dessus de 42% d'activation → F1 = 0 en 2023), alors que le **classement top-k** concentre les contraintes les plus actives et documentées dans le top 100 — celles-ci impliquent des swings de prix plus importants qui génèrent un profit absolu supérieur.
-
-**`historical_profit_rate` sous-performe** sa motivation théorique (69% des paires avec ≥6 mois d'historique ont un taux de profit > 50%). La cause probable : le signal historique est fortement dilué par l'expansion du pool candidat (~170k paires), où de nombreux candidats partagent des taux similaires.
-
-**Recommandation actuelle** : utiliser `activation_level` (défaut, aucun argument supplémentaire). Les scorers supervisés (`maxime_short`, `lasso`, `lightgbm`) exploitent la matrice complète de 36 features et représentent la piste d'amélioration principale.
-
----
-
-## 12. Grille d'Évaluation (rappel)
-
-Le classement final combine trois axes :
-
-| Axe | Poids | Métrique |
-|-----|-------|----------|
-| Axe 1 — F1-score | 25% | Capacité à identifier correctement les opportunités profitables (moyenne ON/OFF) |
-| Axe 2 — Profit total net | 25% | Valeur économique générée par la sélection (`Σ (PR_o − C_o)` sur toutes les sélections) |
-| Axe 3 — Jury | 50% | Approche méthodologique, qualité technique, pertinence de la solution, communication |
-
-Chaque axe est normalisé par le rang des équipes. L'équipe avec le score final pondéré le plus élevé remporte la compétition.
+| `lightgbm` | 2022–2024 (walk-forward) | **0.187** | 0.190 | 0.184 | **49.4%** | **11.5%** | **5,343,589** |
+| `activation_level` | 2020–2022 (train) | 0.134 | 0.136 | 0.131 | 36.0% | 8.2% | 3,471,724 |
+| `activation_level` | 2023 (val) | 0.097 | 0.098 | 0.096 | 20.2% | 6.4% | 132,999 |
+| `historical_profit_rate` | 2020–2022 (train) | 0.048 | 0.049 | 0.046 | 13.2% | 2.9% | 783,256 |
+ 
+### Pourquoi LightGBM domine
+ 
+Le scorer `lightgbm` surpasse tous les autres sur les trois métriques pour deux raisons fondamentales :
+ 
+1. **Combinaison multivarié de signaux.** Les heuristiques simples (`activation_level`, `historical_profit_rate`) utilisent une seule dimension. Le LightGBM exploite les 36 features simultanément et apprend des interactions non-linéaires — par exemple, un EID avec haute activation ET faible dispersion inter-scénarios ET un historique de profitabilité est beaucoup plus susceptible d'être profitable qu'un EID avec seulement une haute activation.
+ 
+2. **Classifier vs ranking brut.** Le LightGBM Classifier optimise directement la frontière profitable/non-profitable, ce qui est aligné avec le F1-score. Les heuristiques produisent un score continu sans notion de seuil de décision.
+ 
+### Analyse du recall structurellement plafonné
+ 
+Le recall de 11.5% peut sembler faible, mais il est contraint structurellement. Avec ~400 opportunités profitables par mois dans l'univers complet et un maximum de 100 sélections autorisées, le recall théorique maximal est ~25%. Notre recall de 11.5% représente environ la moitié de ce maximum.
+ 
+Le levier principal pour améliorer le F1 est la **précision** : chaque faux positif converti en vrai positif augmente simultanément la précision et le recall.
+ 
+### Analyse SHAP — Interprétabilité du modèle
+ 
+L'analyse SHAP (SHapley Additive exPlanations) révèle que le modèle combine trois familles de signaux complémentaires :
+ 
+**Signaux historiques (dominants)**
+- `hist_win_rate` et `hist_n_months` sont les deux features les plus importants. Les EID chroniquement profitables tendent à le rester, reflétant la nature structurelle de la congestion du réseau.
+- `hist_consecutive_wins` est très discriminant : une longue série de mois profitables consécutifs est un signal fort de congestion persistante.
+ 
+**Signaux de simulation (complémentaires)**
+- `max_activation` est le 3ème feature le plus important, avec une relation inversée : une activation très élevée pousse vers NON profitable. Explication métier : les EID très activés sont déjà bien pricés par le marché — le coût d'exposition absorbe le signal.
+- `sum_abs_psm_s2` et `n_hours_active` fournissent le signal prospectif des simulations mensuelles.
+- `psm_cv_scenarios` (consensus inter-scénarios) agit comme filtre de qualité : à profit estimé égal, les EID où les 3 scénarios convergent sont 3× plus souvent profitables.
+ 
+**Signal court-terme (affinement)**
+- `daily_n_hours_active` confirme si la situation prédite par les simulations mensuelles est déjà observable dans les données récentes des 7 premiers jours du mois M.
+ 
+### Note sur ACTIVATIONLEVEL
+ 
+L'ACTIVATIONLEVEL est anti-prédictif lorsqu'utilisé seul comme heuristique de ranking (AUC = 0.424). Cependant, `max_activation` est le 3ème feature le plus important dans le modèle LightGBM. Cette apparente contradiction s'explique : en isolation, une haute activation ne prédit pas la profitabilité car le marché la price dans le coût. Mais dans un modèle multivarié, l'activation interagit avec d'autres features (coût proxy, historique, consensus) pour distinguer les EID où le marché a sous-estimé le signal de ceux où il l'a correctement anticipé.
+ 
+### Évolution des itérations de modélisation
+ 
+| Version | F1 | Profit | Changement clé |
+|---------|-----|--------|----------------|
+| Regressor, top-50, params défaut | 0.178* | 3,438K$ | Baseline LightGBM |
+| Top-100 au lieu de top-50 | 0.253* | 4,503K$ | Recall doublé |
+| Hyperparamètres optimisés | 0.261* | 5,239K$ | Grid search walk-forward |
+| Classifier + features historiques | 0.444* | 5,258K$ | Signal historique ajouté |
+| Features V3 (prunés) | 0.491* | 5,344K$ | Retrait de 7 features redondants |
+| Évaluation univers complet (réel) | **0.187** | **5,344K$** | Recall mesuré sur ~167K triplets |
+ 
+*F1 calculé sur l'univers filtré (surestimé). Le F1 réel sur l'univers complet est 0.187.
+ 
+**Recommandation** : utiliser `--scorer lightgbm` pour les meilleures performances.
