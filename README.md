@@ -253,38 +253,38 @@ Le module `datachallenge/features.py` construit une matrice de features plate (u
 
 ### 10.1. Features de profit estimé (4 features)
 
-| Feature | Description | Source |
-|---------|-------------|--------|
-| `estimated_profit` | `mean(|SUM(PSM)|) − cost_proxy` : différence entre le revenu simulé moyen et le coût proxy | Sim mensuelle M+1 + Coûts M |
-| `sum_abs_psm_s1` | `|SUM(PSM)|` pour le scénario 1 — revenu simulé total en valeur absolue | Sim mensuelle M+1 |
-| `sum_abs_psm_s2` | `|SUM(PSM)|` pour le scénario 2 | Sim mensuelle M+1 |
-| `cost_proxy` | `abs(C_M)` : coût d'exposition du mois M en valeur absolue. Fallback : médiane historique des `|C|` pour les triplets absents de M | Coûts M |
+| Feature | Description                                                                                                                                                                                                                                                                                                                   | Source |
+|---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------|
+| `estimated_profit` | `mean(\|SUM(PSM)                                                                                \|) − cost_proxy` : différence entre le revenu simulé moyen et le coût proxy                                                                                                                                                  | Sim mensuelle M+1 + Coûts M |
+| `sum_abs_psm_s1` | `                                                                                                                                                                            \|SUM(PSM)\|` pour le scénario 1 — revenu simulé total en valeur absolue                                                                         | Sim mensuelle M+1 |
+| `sum_abs_psm_s2` | `                                                                                                                                                                                                                                                      \|SUM(PSM)\|` pour le scénario 2                                       | Sim mensuelle M+1 |
+| `cost_proxy` | `abs(C_M)` : coût d'exposition du mois M en valeur absolue. Fallback : médiane historique des `                                                                                                                                                                                         \|C\|` pour les triplets absents de M | Coûts M |
 
 ### 10.2. Features de consensus inter-scénarios (2 features)
 
-| Feature | Description | Source |
-|---------|-------------|--------|
-| `psm_cv_scenarios` | Coefficient de variation `std(|SUM(PSM)|) / mean(|SUM(PSM)|)` entre les 3 scénarios — mesure l'incertitude du modèle | Sim mensuelle M+1 |
-| `estimated_profit_pessimistic` | `min(|SUM(PSM)|_s − cost_proxy)` sur les 3 scénarios — profit estimé dans le pire cas | Sim mensuelle M+1 + Coûts M |
+| Feature | Description                                                                                                                                                                                                  | Source |
+|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------|
+| `psm_cv_scenarios` | Coefficient de variation `std(\|SUM(PSM) \|) / mean(\|SUM(PSM)\|)` entre les 3 scénarios — mesure l'incertitude du modèle                                                                                    | Sim mensuelle M+1 |
+| `estimated_profit_pessimistic` | `min(                                                                                                                     \|SUM(PSM)\|_s − cost_proxy)` sur les 3 scénarios — profit estimé dans le pire cas | Sim mensuelle M+1 + Coûts M |
 
 ### 10.3. Features d'activation et d'impacts (12 features)
 
 Issues des simulations mensuelles pour M+1, agrégées sur les 3 scénarios.
 
-| Feature | Description |
-|---------|-------------|
-| `mean_activation` | Moyenne de `ACTIVATIONLEVEL` — intensité moyenne de l'opportunité (en %) |
-| `max_activation` | Maximum de `ACTIVATIONLEVEL` — capture les événements extrêmes |
-| `pct_high_activation` | Proportion des heures avec `ACTIVATIONLEVEL > 50%` — fréquence d'activité élevée |
-| `mean_wind` | Moyenne de `WINDIMPACT` — contribution de l'éolien à l'intensité |
-| `mean_solar` | Moyenne de `SOLARIMPACT` — contribution du solaire |
-| `mean_hydro` | Moyenne de `HYDROIMPACT` — contribution de l'hydraulique |
-| `mean_nonrenew` | Moyenne de `NONRENEWBALIMPACT` — contribution des non-renouvelables |
-| `mean_external` | Moyenne de `EXTERNALIMPACT` — contribution des facteurs externes |
-| `mean_transmission_outage` | Moyenne de `TRANSMISSIONOUTAGEIMPACT` — impact des pannes de transmission |
-| `mean_load` | Moyenne de `LOADIMPACT` — impact de la charge |
-| `n_hours_active` | Nombre d'heures avec `PSM ≠ 0` (moyenné sur les scénarios) — proxy de la durée d'activité |
-| `impact_concentration` | `max(|src_impacts|) / sum(|src_impacts|)` — mesure la concentration : un impact domine-t-il ? |
+| Feature | Description                                                                                                                                                               |
+|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `mean_activation` | Moyenne de `ACTIVATIONLEVEL` — intensité moyenne de l'opportunité (en %)                                                                                                  |
+| `max_activation` | Maximum de `ACTIVATIONLEVEL` — capture les événements extrêmes                                                                                                            |
+| `pct_high_activation` | Proportion des heures avec `ACTIVATIONLEVEL > 50%` — fréquence d'activité élevée                                                                                          |
+| `mean_wind` | Moyenne de `WINDIMPACT` — contribution de l'éolien à l'intensité                                                                                                          |
+| `mean_solar` | Moyenne de `SOLARIMPACT` — contribution du solaire                                                                                                                        |
+| `mean_hydro` | Moyenne de `HYDROIMPACT` — contribution de l'hydraulique                                                                                                                  |
+| `mean_nonrenew` | Moyenne de `NONRENEWBALIMPACT` — contribution des non-renouvelables                                                                                                       |
+| `mean_external` | Moyenne de `EXTERNALIMPACT` — contribution des facteurs externes                                                                                                          |
+| `mean_transmission_outage` | Moyenne de `TRANSMISSIONOUTAGEIMPACT` — impact des pannes de transmission                                                                                                 |
+| `mean_load` | Moyenne de `LOADIMPACT` — impact de la charge                                                                                                                             |
+| `n_hours_active` | Nombre d'heures avec `PSM ≠ 0` (moyenné sur les scénarios) — proxy de la durée d'activité                                                                                 |
+| `impact_concentration` | `max(\|src_impacts                                                                        \|) / sum(\|src_impacts\|)` — mesure la concentration : un impact domine-t-il ? |
 
 **Note** : Les impacts "par source" (wind, solar, hydro, nonrenew, external) constituent une somme partielle de `ACTIVATIONLEVEL`. Les variables `LOADIMPACT` et `TRANSMISSIONOUTAGEIMPACT` sont des variables explicatives avec chevauchements et ne doivent pas être sommées avec les impacts par source.
 
